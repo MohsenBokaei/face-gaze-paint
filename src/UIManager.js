@@ -57,13 +57,13 @@ export class UIManager {
     drawFaceLandmarks(landmarks) {
         if (!landmarks) return;
         
-        const canvas = this.elements.outputCanvas;
-        this.canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+        // Ensure the canvas is transparent so we can see the video
+        this.canvasCtx.globalCompositeOperation = 'source-over';
+        this.canvasCtx.clearRect(0, 0, this.elements.outputCanvas.width, this.elements.outputCanvas.height);
         
         const dm = this.drawingUtils;
         const FL = FaceLandmarker;
 
-        // Draw with specific colors
         dm.drawConnectors(landmarks, FL.FACE_LANDMARKS_TESSELATION, {color: "#C0C0C070", lineWidth: 1});
         dm.drawConnectors(landmarks, FL.FACE_LANDMARKS_RIGHT_EYE, {color: "#FF3030", lineWidth: 2});
         dm.drawConnectors(landmarks, FL.FACE_LANDMARKS_LEFT_EYE, {color: "#30FF30", lineWidth: 2});
