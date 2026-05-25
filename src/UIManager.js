@@ -1,131 +1,88 @@
 import vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 const { DrawingUtils, FaceLandmarker } = vision;
 
-/**
- * UIManager: The "Stage Manager".
- * Handles all visual rendering and High-DPI canvas scaling.
- */
 export class UIManager {
     constructor(elements) {
         this.elements = elements; 
-        
-        // Contexts
         this.canvasCtx = elements.outputCanvas.getContext("2d");
         this.gazeCtx = elements.gazeCanvas.getContext("2d");
         this.paintCtx = elements.paintCanvas.getContext("2d");
-
-        // MediaPipe Drawing Helper
         this.drawingUtils = new DrawingUtils(this.canvasCtx);
     }
 
     /**
-     * Handles High-DPI scaling (Retina support).
-     * Matches original lines 134-150.
+     * CRITICAL FIX: Match canvas buffer to the actual Video Stream resolution
      */
-    resizeCanvas(canvas, context) {
-        const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-        
-        // Buffer size (Internal resolution)
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-        
-        // Logical size (Scaling the drawing context)
-        context.setTransform(dpr, 0, 0, dpr, 0, 0);
-        
-        // Re-apply standard painting styles
-        if (canvas === this.elements.paintCanvas) {
-            context.strokeStyle = "#005c99"; 
-            context.lineWidth = 3;
-            context.lineCap = "round"; 
-            context.lineJoin = "round";
-        }
-    }
-
     resizeAll() {
-        this.resizeCanvas(this.elements.outputCanvas, this.canvasCtx);
-        this.resizeCanvas(this.elements.paintCanvas, this.paintCtx);
-        this.resizeCanvas(this.elements.gazeCanvas, this.gazeCtx);
+        const video = this.elements.video;
+        const outCanvas = this.elements.outputCanvas;
+
+        // 1. Sync Face Mesh Canvas to Video Dimensions
+        if (video.videoWidth > 0) {
+            // Match the internal buffer to the AI's "world"
+            outCanvas.width = video.videoWidth;
+            outCanvas.height = video.videoHeight;
+            
+            // Match the CSS display size to the video display size
+            outCanvas.style.width = video.clientWidth + "px";
+            outCanvas.style.height = video.clientHeight + "px";
+        }
+
+        // 2. Standard resizing for Gaze and Paint canvases
+        const dpr = window.devicePixelRatio || 1;
+        [this.elements.paintCanvas, this.elements.gazeCanvas].forEach(c => {
+            const rect = c.getBoundingClientRect();
+            c.width = rect.width * dpr;
+            c.height = rect.height * dpr;
+            c.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+        });
     }
 
-    /**
-     * Draws the Face Mesh.
-     * Matches original lines 785-802.
-     */
     drawFaceLandmarks(landmarks) {
         if (!landmarks) return;
-        
-        // Clear using logical (CSS) dimensions due to setTransform
-        const rect = this.elements.outputCanvas.getBoundingClientRect();
-        this.canvasCtx.clearRect(0, 0, rect.width, rect.height);
+        // Clear based on internal buffer width/height
+        this.canvasCtx.clearRect(0, 0, this.elements.outputCanvas.width, this.elements.outputCanvas.height);
         
         const dm = this.drawingUtils;
         const FL = FaceLandmarker;
 
+        // DrawingUtils automatically maps MediaPipe's 0-1 coordinates 
+        // to the Canvas width/height we set in resizeAll()
         dm.drawConnectors(landmarks, FL.FACE_LANDMARKS_TESSELATION, {color: "#C0C0C070", lineWidth: 1});
         dm.drawConnectors(landmarks, FL.FACE_LANDMARKS_RIGHT_EYE, {color: "#FF3030"});
         dm.drawConnectors(landmarks, FL.FACE_LANDMARKS_LEFT_EYE, {color: "#30FF30"});
     }
 
-    /**
-     * Draws the estimation crosshair.
-     * Logic corrected for High-DPI scaled contexts.
-     */
     renderGazeIndicator(x, y) {
-        const ctx = this.gazeCtx;
         const rect = this.elements.gazeCanvas.getBoundingClientRect();
-
-        // Clear the scaled context
-        ctx.clearRect(0, 0, rect.width, rect.height);
-        
-        // Draw crosshair using CSS dimensions
-        ctx.strokeStyle = "#aaaaaa";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(rect.width / 2, 0); ctx.lineTo(rect.width / 2, rect.height);
-        ctx.moveTo(0, rect.height / 2); ctx.lineTo(rect.width, rect.height / 2);
-        ctx.stroke();
-
-        // Draw red gaze dot
-        ctx.fillStyle = "#FF3030";
-        ctx.beginPath();
-        ctx.arc(x * rect.width, y * rect.height, 8, 0, Math.PI * 2);
-        ctx.fill();
+        this.gazeCtx.clearRect(0, 0, rect.width, rect.height);
+        this.gazeCtx.strokeStyle = "#aaaaaa";
+        this.gazeCtx.lineWidth = 1;
+        this.gazeCtx.beginPath();
+        this.gazeCtx.moveTo(rect.width / 2, 0); this.gazeCtx.lineTo(rect.width / 2, rect.height);
+        this.gazeCtx.moveTo(0, rect.height / 2); this.gazeCtx.lineTo(rect.width, rect.height / 2);
+        this.gazeCtx.stroke();
+        this.gazeCtx.fillStyle = "#FF3030";
+        this.gazeCtx.beginPath();
+        this.gazeCtx.arc(x * rect.width, y * rect.height, 8, 0, Math.PI * 2);
+        this.gazeCtx.fill();
     }
 
     updateBlendshapesList(blendshapes) {
-        if (!blendshapes?.[0]?.categories) {
-            this.elements.blendShapesList.innerHTML = "";
-            return;
-        }
-
-        let html = blendshapes[0].categories.map(s => {
+        if (!blendshapes?.[0]?.categories) return;
+        this.elements.blendShapesList.innerHTML = blendshapes[0].categories.map(s => {
             const score = s.score || 0;
-            const sW = Math.max(0, Math.min(100, score * 100));
-            return `
-                <li class="blend-shapes-item">
-                    <span class="blend-shapes-label">${s.displayName || s.categoryName}</span>
-                    <span class="blend-shapes-value" style="width:${sW}%">${score.toFixed(4)}</span>
-                </li>`;
+            return `<li class="blend-shapes-item">
+                <span class="blend-shapes-label">${s.displayName || s.categoryName}</span>
+                <span class="blend-shapes-value" style="width:${score * 100}%">${score.toFixed(4)}</span>
+            </li>`;
         }).join("");
-        
-        this.elements.blendShapesList.innerHTML = html;
     }
 
-    toggleFullscreen(element) {
-        if (!document.fullscreenElement) {
-            element.requestFullscreen().catch(e => console.error(e));
-        } else {
-            document.exitFullscreen();
-        }
-    }
-
-    setFeedback(text) {
-        this.elements.feedback.textContent = text;
-    }
-
-    clearPaintCanvas() {
+    setFeedback(text) { this.elements.feedback.textContent = text; }
+    toggleFullscreen(el) { if (!document.fullscreenElement) el.requestFullscreen(); else document.exitFullscreen(); }
+    clearPaintCanvas() { 
         const rect = this.elements.paintCanvas.getBoundingClientRect();
-        this.paintCtx.clearRect(0, 0, rect.width, rect.height);
+        this.paintCtx.clearRect(0, 0, rect.width, rect.height); 
     }
 }
