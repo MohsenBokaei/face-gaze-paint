@@ -1,3 +1,9 @@
+/* Mirror both the video and the overlay canvas together */
+.videoView div {
+    transform: scaleX(-1);
+    -webkit-transform: scaleX(-1);
+}
+
 /* Basic Reset & Scroll Prevention */
 html, body {
   height: 100%;
