@@ -17,24 +17,28 @@ export class UIManager {
         const video = this.elements.video;
         const outCanvas = this.elements.outputCanvas;
 
-        // 1. Sync Face Mesh Canvas to Video Dimensions
+        // Sync Face Mesh Canvas to Video Stream Pixels
         if (video.videoWidth > 0) {
-            // Match the internal buffer to the AI's "world"
+            // 1. Match internal buffer to actual webcam hardware resolution
             outCanvas.width = video.videoWidth;
             outCanvas.height = video.videoHeight;
             
-            // Match the CSS display size to the video display size
+            // 2. Force the canvas display size to match the video display size exactly
             outCanvas.style.width = video.clientWidth + "px";
             outCanvas.style.height = video.clientHeight + "px";
+            
+            console.log(`UI Synced: ${video.videoWidth}x${video.videoHeight}`);
         }
 
-        // 2. Standard resizing for Gaze and Paint canvases
+        // Standard resizing for Gaze and Paint canvases (using DPI scaling)
         const dpr = window.devicePixelRatio || 1;
         [this.elements.paintCanvas, this.elements.gazeCanvas].forEach(c => {
             const rect = c.getBoundingClientRect();
-            c.width = rect.width * dpr;
-            c.height = rect.height * dpr;
-            c.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+            if (rect.width > 0) {
+                c.width = rect.width * dpr;
+                c.height = rect.height * dpr;
+                c.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
         });
     }
 
