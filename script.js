@@ -112,30 +112,29 @@ async function togglewebcam() {
     if (vision.webcamRunning) {
         vision.stopWebcam(elements.video);
         isPaintingEnabled = false;
-        elements.webcamBtn.innerText = "ENABLE WEBCAM";
+        elements.webcamBtn.innerText = "ENABLE WEBCAM"; // Corrected
     } else {
         try {
             await vision.startWebcam(elements.video);
             
-            // Critical for Chrome: ensure the video is actually playing
             elements.video.play();
             
-            // Check for dimensions every 100ms until they are ready
             const checkDimensions = setInterval(() => {
                 if (elements.video.videoWidth > 0) {
                     ui.resizeAll();
                     isPaintingEnabled = true;
-                    elements.webcamBtn.innerText = "DISABLE WEBCAM";
+                    elements.webcamBtn.innerText = "DISABLE WEBCAM"; // Corrected
                     clearInterval(checkDimensions);
                 }
             }, 100);
 
         } catch (e) {
             console.error("Webcam Error:", e);
-            alert("Camera access failed. Ensure you are on HTTPS and allowed permissions.");
+            alert("Could not access camera.");
         }
     }
 }
+
 function startCalibration() {
     if (!vision || !vision.webcamRunning) return;
     ui.setFeedback("Follow the dots...");
