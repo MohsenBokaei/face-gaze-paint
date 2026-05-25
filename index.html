@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Gaze & Touch Paint | AI Art</title>
+  <link href="https://unpkg.com/material-components-web@latest/dist/material-components-web.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/material-components-web@latest/dist/material-components-web.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="calibration_fullscreen" style="display:none;"></canvas>
+  <h1>Face Landmark Detection & Gaze Painting</h1>
+
+  <section id="demos" class="invisible">
+    <div class="main-container">
+        <!-- Left: AI Data -->
+        <div class="left-column">
+            <h2>AI Vision Panel</h2>
+            <p>1. Enable Webcam <br> 2. Calibrate <br> 3. Look at the canvas to paint!</p>
+
+            <div class="videoView">
+              <button id="webcamButton" class="mdc-button mdc-button--raised">
+                <span class="mdc-button__label">ENABLE WEBCAM</span>
+              </button>
+              <div style="position: relative;">
+                <video id="webcam" autoplay playsinline></video>
+                <canvas class="output_canvas" id="output_canvas" style="position: absolute; left: 0px; top: 0px;"></canvas>
+              </div>
+            </div>
+
+            <div class="gaze-container">
+                <h3>Estimated Gaze</h3>
+                <canvas id="gaze_canvas"></canvas>
+            </div>
+
+            <div class="blend-shapes">
+                <h3>Face Expressions</h3>
+                <ul class="blend-shapes-list" id="video-blend-shapes"></ul>
+            </div>
+        </div>
+
+        <!-- Right: Painting -->
+        <div class="paint-container">
+            <h3>Gaze Painting Canvas</h3>
+            <canvas id="paint_canvas"></canvas> 
+            <div> 
+                <button id="fullscreen-button" class="mdc-button mdc-button--raised">
+                   <span class="mdc-button__label">FULLSCREEN</span>
+                </button>
+                 <button id="clear-paint-button" class="mdc-button">
+                   <span class="mdc-button__label">CLEAR</span>
+                </button>
+                <button id="calibrate-button" class="mdc-button">
+                  <span class="mdc-button__label">START CALIBRATION</span>
+                </button>
+            </div>
+            <span id="calibration-feedback"></span>
+        </div>
+    </div>
+  </section>
+
+  <script src="script.js" type="module"></script>
+</body>
+</html>
