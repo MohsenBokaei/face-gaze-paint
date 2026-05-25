@@ -85,16 +85,14 @@ function appLoop() {
         const point = gaze.getGazePoint(results);
 
         if (!calibration.isCalibrating) {
-            // In Physarum mode, the painter manages its own pixel buffer.
-            // We don't fillRect/clear here.
-            
+            // Determine if we should nudge toward gaze
             const nx = isPaintingEnabled ? point.x : -1;
             const ny = isPaintingEnabled ? point.y : -1;
 
-            // Update the complex grid logic
+            // Update the Physarum Simulation
             painter.update(nx, ny, rect.width, rect.height);
             
-            // Draw the finished trail map
+            // Render the Trail Map to the paint canvas
             painter.draw(ui.paintCtx, rect.width, rect.height);
 
             ui.renderGazeIndicator(point.x, point.y);
