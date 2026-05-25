@@ -23,11 +23,12 @@ export class VisionService {
             );
             this.faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
                 baseOptions: {
+                    // IMPORTANT: Use the model that supports IRIS landmarks
                     modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-                    delegate: "GPU" // Attempts WebGL acceleration
+                    delegate: "GPU"
                 },
                 outputFaceBlendshapes: true,
-                outputFaceLandmarks: true,
+                outputFaceLandmarks: true, 
                 runningMode: "VIDEO",
                 numFaces: 1
             });
