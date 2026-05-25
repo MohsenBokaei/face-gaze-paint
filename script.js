@@ -110,28 +110,59 @@ function appLoop() {
 async function togglewebcam() {
     if (vision.webcamRunning) {
         vision.stopWebcam(elements.video);
+
         isPaintingEnabled = false;
+
         elements.webcamBtn.innerText = "ENABLE WEBCAM";
+
+        // Clear overlay canvas
+        const ctx = elements.outputCanvas.getContext("2d");
+        ctx.clearRect(
+            0,
+            0,
+            elements.outputCanvas.width,
+            elements.outputCanvas.height
+        );
+
     } else {
         try {
-            // 1. Wait for the webcam to initialize
+
+            // Start webcam
             await vision.startWebcam(elements.video);
-            
-            // 2. Force the video to play
-            elements.video.play();
-            
-            // 3. Immediately trigger resizing now that the stream is active
-            // We use a small timeout to let the browser compute the layout
-            setTimeout(() => {
-                ui.resizeAll();
-                isPaintingEnabled = true;
-                elements.webcamBtn.innerText = "DISABLE WEBCAM";
-                ui.setFeedback("");
-            }, 100);
+
+            // Ensure video starts
+            await elements.video.play();
+
+            // Wait a moment so browser calculates dimensions
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Resize all canvases correctly
+            ui.resizeAll();
+
+            // Force output canvas to match video
+            elements.outputCanvas.width = elements.video.videoWidth;
+            elements.outputCanvas.height = elements.video.videoHeight;
+
+            elements.outputCanvas.style.width = "100%";
+            elements.outputCanvas.style.height = "100%";
+
+            isPaintingEnabled = true;
+
+            elements.webcamBtn.innerText = "DISABLE WEBCAM";
+
+            console.log(
+                "Webcam Ready:",
+                elements.video.videoWidth,
+                elements.video.videoHeight
+            );
 
         } catch (e) {
+
             console.error("Webcam Error:", e);
-            alert("Could not access camera.");
+
+            alert(
+                "Could not access webcam. Please allow camera permissions."
+            );
         }
     }
 }
