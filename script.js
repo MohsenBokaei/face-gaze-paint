@@ -4,17 +4,13 @@ import { ParticleSystem } from './src/ParticleSystem.js';
 import { CalibrationManager } from './src/CalibrationManager.js';
 import { UIManager } from './src/UIManager.js';
 
-// --- 1. Global Variables (Shared across all functions) ---
+// Global instances
 let vision, gaze, painter, ui, calibration;
-let elements; 
+let elements;
 let isPaintingEnabled = false;
 let isTouchPainting = false;
 
-/**
- * Main App Entry Point
- */
 async function init() {
-    // Initialize the global elements object
     elements = {
         video: document.getElementById("webcam"),
         outputCanvas: document.getElementById("output_canvas"),
@@ -38,33 +34,18 @@ async function init() {
     try {
         await vision.initialize();
         document.getElementById("demos").classList.remove("invisible");
-        
+        ui.resizeAll();
+
         // Event Bindings
         elements.webcamBtn.onclick = togglewebcam;
         elements.calibrateBtn.onclick = startCalibration;
         elements.clearBtn.onclick = () => { painter.clear(); ui.clearPaintCanvas(); };
         elements.fullscreenBtn.onclick = () => ui.toggleFullscreen(elements.paintCanvas);
 
-        // Touch/Mouse Painting Logic
-        const handlePointer = (e) => {
-            if (e.type.startsWith('touch')) e.preventDefault();
-            const rect = elements.paintCanvas.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            painter.add(clientX - rect.left, clientY - rect.top);
-        };
-
-        elements.paintCanvas.onmousedown = () => { isTouchPainting = true; };
-        window.onmouseup = () => { isTouchPainting = false; };
-        elements.paintCanvas.onmousemove = (e) => { if (isTouchPainting) handlePointer(e); };
-        elements.paintCanvas.addEventListener('touchstart', (e) => { isTouchPainting = true; handlePointer(e); }, {passive: false});
-        elements.paintCanvas.addEventListener('touchend', () => { isTouchPainting = false; });
-        elements.paintCanvas.addEventListener('touchmove', (e) => { if (isTouchPainting) handlePointer(e); }, {passive: false});
-
         window.onresize = () => ui.resizeAll();
         requestAnimationFrame(appLoop);
     } catch (err) {
-        console.error("Initialization failed:", err);
+        console.error("Init failed:", err);
     }
 }
 
@@ -77,7 +58,7 @@ function appLoop() {
             const raw = gaze.calculateRawGaze(results);
             if (raw) {
                 calibration.currentPointSamples.push(raw);
-                if (calibration.currentPointSamples.length >= 60) { 
+                if (calibration.currentPointSamples.length >= 50) { 
                     calibration.processPointSamples(calibration.currentPointSamples);
                     calibration.currentPointSamples = [];
                     calibration.currentIndex++;
@@ -125,8 +106,7 @@ async function togglewebcam() {
 }
 
 function startCalibration() {
-    if (!vision || !vision.webcamRunning) return;
-    ui.setFeedback("Follow the dots...");
+    if (!vision.webcamRunning) return;
     calibration.start();
 }
 
