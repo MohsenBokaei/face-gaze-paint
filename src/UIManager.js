@@ -17,21 +17,26 @@ export class UIManager {
         const video = this.elements.video;
         const outCanvas = this.elements.outputCanvas;
 
-        // 1. Face Mesh Canvas: Must match internal video resolution
+        // 1. Sync Mesh Canvas to the Video's DISPLAY size
         if (video.videoWidth > 0) {
+            // Set the internal resolution to match the stream
             outCanvas.width = video.videoWidth;
             outCanvas.height = video.videoHeight;
+            
+            // Ensure the canvas stretches to fill the same space as the video element
+            outCanvas.style.width = "100%";
+            outCanvas.style.height = "100%";
         }
 
-        // 2. DPI-Scaled Resizing for Gaze and Paint
+        // 2. Standard DPI scaling for Gaze and Paint
         const dpr = window.devicePixelRatio || 1;
-        
         [this.elements.paintCanvas, this.elements.gazeCanvas].forEach(c => {
             const rect = c.getBoundingClientRect();
             if (rect.width > 0) {
+                const ctx = c.getContext("2d");
                 c.width = rect.width * dpr;
                 c.height = rect.height * dpr;
-                c.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             }
         });
     }
