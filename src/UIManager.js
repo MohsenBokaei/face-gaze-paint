@@ -38,15 +38,29 @@ export class UIManager {
 
     drawFaceLandmarks(landmarks) {
         if (!landmarks) return;
-        // Use internal width/height to match MediaPipe 0-1 range
+        
+        // Use internal buffer size of the canvas to match AI coordinates
         this.canvasCtx.clearRect(0, 0, this.elements.outputCanvas.width, this.elements.outputCanvas.height);
         
         const dm = this.drawingUtils;
         const FL = FaceLandmarker;
 
+        // Mesh Tesselation
         dm.drawConnectors(landmarks, FL.FACE_LANDMARKS_TESSELATION, {color: "#C0C0C070", lineWidth: 1});
+        
+        // Eyes
         dm.drawConnectors(landmarks, FL.FACE_LANDMARKS_RIGHT_EYE, {color: "#FF3030", lineWidth: 2});
         dm.drawConnectors(landmarks, FL.FACE_LANDMARKS_LEFT_EYE, {color: "#30FF30", lineWidth: 2});
+    }
+
+    updateBlendshapesList(blendshapes) {
+        // Safe check: Only run if the element actually exists in the HTML
+        if (!this.elements.blendShapesList || !blendshapes?.[0]?.categories) return;
+
+        // Optional: Logic is still here but won't run if you removed the ID from index.html
+        this.elements.blendShapesList.innerHTML = blendshapes[0].categories.slice(0,5).map(s => {
+            return `<li>${s.categoryName}: ${s.score.toFixed(2)}</li>`;
+        }).join("");
     }
 
     renderGazeIndicator(x, y) {
