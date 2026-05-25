@@ -1,8 +1,8 @@
-import { VisionService } from './src/VisionService.js';
-import { GazeEngine } from './src/GazeEngine.js';
-import { ParticleSystem } from './src/ParticleSystem.js';
-import { CalibrationManager } from './src/CalibrationManager.js';
-import { UIManager } from './src/UIManager.js';
+import { VisionService } from './VisionService.js';
+import { GazeEngine } from './GazeEngine.js';
+import { ParticleSystem } from './ParticleSystem.js';
+import { CalibrationManager } from './CalibrationManager.js';
+import { UIManager } from './UIManager.js';
 
 // Global variables
 let vision, gaze, painter, ui, calibration;
