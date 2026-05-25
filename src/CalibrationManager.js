@@ -2,7 +2,7 @@ import { MathUtils } from './MathUtils.js';
 
 /**
  * CalibrationManager: Optimized for extreme-edge coverage and 
- * high-fidelity gaze mapping.
+ * high-fidelity gaze mapping. Fixes invisible drawing by syncing resolution.
  */
 export class CalibrationManager {
     constructor(overlayCanvas, overlayCtx) {
@@ -10,11 +10,10 @@ export class CalibrationManager {
         this.ctx = overlayCtx;
         
         this.config = {
-            // 9-point grid provides the best balance of speed and edge accuracy
             pointsToCollect: 9, 
-            samplesPerPoint: 45, // Increased for better statistical mean
-            settleFrames: 20,    // Ignore the first 20 frames to allow eye to settle
-            outlierThreshold: 1.5 // Tightened to reject saccades (eye jumps)
+            samplesPerPoint: 45, 
+            settleFrames: 25,    // Wait for eye stabilization
+            outlierThreshold: 1.5 
         };
 
         this.isCalibrating = false;
@@ -26,90 +25,93 @@ export class CalibrationManager {
     }
 
     /**
-     * Generates a 3x3 grid at the absolute limits of the screen.
-     * Hits 2% and 98% to ensure the "Look Down" logic has extreme data.
+     * Hits 3% and 97% to ensure we capture the absolute limits of the screen.
      */
     generateSequence() {
-        const margins = [0.03, 0.5, 0.97]; // Absolute edges + centers
+        const margins = [0.03, 0.5, 0.97]; 
         const sequence = [];
-
         for (let y of margins) {
             for (let x of margins) {
                 sequence.push({ x, y });
             }
         }
-
-        // Randomize order to prevent the user from "pre-moving" their eyes
         this.sequence = sequence.sort(() => Math.random() - 0.5);
         return this.sequence;
     }
 
     start() {
+        // --- THE CRITICAL FIX ---
+        // Sync the internal drawing buffer to the actual screen size
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+        
         this.generateSequence();
         this.isCalibrating = true;
         this.currentIndex = 0;
         this.collectedPoints = [];
         this.currentPointSamples = [];
         this.settleCounter = 0;
+        
+        // Show overlay
         this.canvas.style.display = "block";
+        console.log("Calibration Canvas Initialized:", this.canvas.width, "x", this.canvas.height);
     }
 
     /**
      * Visual Feedback: Shrinking Target.
-     * Forces the user's pupil to contract and focus on a single point.
      */
     drawCurrentDot() {
         const point = this.sequence[this.currentIndex];
         if (!point) return;
 
+        // Uses the corrected width/height
         const px = point.x * this.canvas.width;
         const py = point.y * this.canvas.height;
 
-        // Calculate progress (0.0 to 1.0)
         const progress = this.currentPointSamples.length / this.config.samplesPerPoint;
         
+        // Clear the entire fullscreen overlay
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // 1. Draw Outer "Focus" Ring
-        this.ctx.strokeStyle = "rgba(100, 100, 255, 0.5)";
-        this.ctx.lineWidth = 2;
+        // Darken the background slightly to make the dot "pop"
+        this.ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // 1. Outer Focus Ring
+        this.ctx.strokeStyle = "rgba(100, 100, 255, 0.8)";
+        this.ctx.lineWidth = 3;
         this.ctx.beginPath();
-        this.ctx.arc(px, py, 30, 0, Math.PI * 2);
+        this.ctx.arc(px, py, 40, 0, Math.PI * 2);
         this.ctx.stroke();
 
-        // 2. Draw Shrinking Inner Target
-        // Starts large/red, ends tiny/green
-        const radius = Math.max(3, 25 * (1 - progress));
-        const hue = progress * 120; // 0 (Red) to 120 (Green)
+        // 2. Shrinking Target Dot
+        const radius = Math.max(5, 30 * (1 - progress));
+        const hue = progress * 120; // Red to Green
         
+        this.ctx.shadowBlur = 15;
+        this.ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
         this.ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
         this.ctx.beginPath();
         this.ctx.arc(px, py, radius, 0, Math.PI * 2);
         this.ctx.fill();
+        this.ctx.shadowBlur = 0; // Reset shadow
 
-        // 3. Label for user
-        this.ctx.fillStyle = "white";
-        this.ctx.font = "12px Inter";
+        // 3. Label
+        this.ctx.fillStyle = "black";
+        this.ctx.font = "bold 16px Arial";
         this.ctx.textAlign = "center";
-        this.ctx.fillText(`Point ${this.currentIndex + 1}/9: Focus on the center`, px, py + 45);
+        this.ctx.fillText(`LOOK HERE (${this.currentIndex + 1}/9)`, px, py + 60);
     }
 
-    /**
-     * Advanced Outlier Rejection.
-     * Discards noisy data from when the user blinks or looks away.
-     */
     processPointSamples(samples) {
         if (samples.length < 10) return;
 
-        // Calculate Mean
         const meanX = samples.reduce((a, b) => a + b.x, 0) / samples.length;
         const meanY = samples.reduce((a, b) => a + b.y, 0) / samples.length;
 
-        // Calculate Standard Deviation
         const dists = samples.map(s => Math.sqrt((s.x - meanX)**2 + (s.y - meanY)**2));
         const avgDist = dists.reduce((a, b) => a + b, 0) / dists.length;
         
-        // Threshold: Discard samples that are too far from the average gaze for this dot
         const filtered = samples.filter((s, i) => dists[i] < avgDist * this.config.outlierThreshold);
 
         if (filtered.length > 5) {
@@ -122,22 +124,14 @@ export class CalibrationManager {
         }
     }
 
-    /**
-     * TPS Solver: Handles the non-linear "warp" of looking up and down.
-     */
     solve() {
         this.canvas.style.display = "none";
         this.isCalibrating = false;
 
-        if (this.collectedPoints.length < 5) {
-            console.error("Calibration failed: Not enough stable points.");
-            return null;
-        }
+        if (this.collectedPoints.length < 5) return null;
 
-        // Calculate TPS Parameters (as seen in the research papers)
         const tpsParams = this.calculateTPS(this.collectedPoints);
 
-        // Also calculate legacy Polynomial for fallback
         const A = [], bX = [], bY = [];
         this.collectedPoints.forEach(p => {
             const x = p.avgRawX, y = p.avgRawY;
