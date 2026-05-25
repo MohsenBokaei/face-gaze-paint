@@ -7,7 +7,7 @@ import { MathUtils } from './MathUtils.js';
  */
 export class GazeEngine {
     constructor(sensitivity = 3.0, smoothingFactor = 0.3) {
-        // Matched to original settings (lines 142-144)
+        // Matched to original settings
         this.sensitivity = sensitivity;
         this.smoothingFactor = smoothingFactor;
 
@@ -22,7 +22,7 @@ export class GazeEngine {
             tpsParams: null
         };
 
-        // MediaPipe Face Mesh Indices (Matched to original lines 686-689)
+        // MediaPipe Face Mesh Indices
         this.indices = {
             leftIris: [474, 475, 476, 477],
             rightIris: [469, 470, 471, 472],
@@ -35,7 +35,6 @@ export class GazeEngine {
 
     /**
      * Processes results and returns a normalized {x, y} coordinate.
-     * Logic matched to original predictWebcam loop (lines 763-782).
      */
     getGazePoint(results) {
         const raw = this.calculateRawGaze(results);
@@ -50,7 +49,7 @@ export class GazeEngine {
         let finalX = this.smoothedX;
         let finalY = this.smoothedY;
 
-        // 2. Apply Calibration (Matched to lines 771-778)
+        // 2. Apply Calibration
         if (this.calibrated) {
             let mapped = null;
             
@@ -84,7 +83,6 @@ export class GazeEngine {
 
     /**
      * Geometric calculation of gaze based on iris center vs eye corners.
-     * Logic matched to original calculateRawGaze (lines 683-711).
      */
     calculateRawGaze(results) {
         if (!results?.faceLandmarks?.[0]) return null;
@@ -101,7 +99,10 @@ export class GazeEngine {
             const rEi = landmarks[this.indices.rightEyeInner];
             const rEo = landmarks[this.indices.rightEyeOuter];
 
-            // Calculate eye geometric centers (matched to lines 694-695)
+            // Safety check: Exit if any necessary corner landmarks are missing
+            if (!lEi || !lEo || !rEi || !rEo) return null;
+
+            // Calculate eye geometric centers
             const lEc = { x: (lEi.x + lEo.x) / 2, y: (lEi.y + lEo.y) / 2 };
             const rEc = { x: (rEi.x + rEo.x) / 2, y: (rEi.y + rEo.y) / 2 };
 
@@ -110,11 +111,11 @@ export class GazeEngine {
             const rW = Math.abs(rEo.x - rEi.x);
             if (lW < 0.005 || rW < 0.005) return null;
 
-            // Normalized offsets (matched to lines 698-701)
+            // Normalized offsets
             const oX = (((lI.x - lEc.x) / lW) + ((rI.x - rEc.x) / rW)) / 2;
             const oY = (((lI.y - lEc.y) / lW) + ((rI.y - rEc.y) / rW)) / 2;
 
-            // Apply sensitivity (matched to lines 704-706)
+            // Apply sensitivity
             let rawX = 0.5 - oX * this.sensitivity;
             let rawY = 0.5 + oY * this.sensitivity;
 
@@ -130,7 +131,7 @@ export class GazeEngine {
     }
 
     /**
-     * Matched to original calculateCenter (lines 173-186)
+     * Helper to find the average center of a set of landmarks.
      */
     calculateCenter(landmarks, indices) {
         let sumX = 0, sumY = 0, valid = 0;
@@ -146,7 +147,6 @@ export class GazeEngine {
 
     /**
      * Updates the calibration profile. 
-     * Called by the Orchestrator after CalibrationManager finishes.
      */
     setCalibrationData(data) {
         if (!data) return;
