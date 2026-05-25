@@ -1,194 +1,167 @@
 /**
- * Advanced Physarum (Slime Mold) Particle System
- * Based on Sage Jenson's 'Physarum' and Jeff Jones' Research.
- * 
- * Logic: 
- * 1. Agents Sense: Look at Scent Grid (Left, Center, Right).
- * 2. Agents Move: Turn toward highest scent + Gaze Bias.
- * 3. Agents Deposit: Leave "chemical" on the Trail Map.
- * 4. Trail Map Update: Diffuse (Spread) and Decay (Evaporate).
+ * Accurate Physarum (Slime Mold) System
+ * Recreating the logic from johshoff/physarum & Jeff Jones
  */
 export class ParticleSystem {
     constructor(capacity = 8000) {
         this.capacity = capacity;
         
-        // Agent Properties
-        this.x = new Float32Array(capacity);
-        this.y = new Float32Array(capacity);
-        this.heading = new Float32Array(capacity); // Direction in radians
-        
-        // Simulation Parameters
+        // Simulation Constants (Fine-tuned for Mycelium look)
         this.config = {
-            sensorAngle: 0.35,      // Angle of side sensors (radians)
-            sensorDist: 18,        // Distance of sensors from agent
-            turnSpeed: 0.4,        // How fast agents turn toward scent
-            moveSpeed: 1.5,        // Pixels per frame
-            randomTurn: 0.15,      // Stochastic "wiggle"
-            evaporationRate: 0.94, // 0.9 = fast decay, 0.99 = long trails
-            diffusionRate: 0.1,    // How much scent spreads to neighbors
-            depositAmount: 5.0,    // Scent intensity left per frame
-            gazeStrength: 0.08     // How much gaze influences direction
+            sensorDist: 12,
+            sensorAngle: 35 * Math.PI / 180,
+            turnSpeed: 30 * Math.PI / 180,
+            moveSpeed: 1.2,
+            decayFactor: 0.92,
+            depositAmount: 0.8,
+            gazeInfluence: 0.15, // How strongly they turn toward eyes
+            weight: [
+                1/16, 1/8, 1/16,
+                1/8,  1/4,  1/8,
+                1/16, 1/8, 1/16
+            ]
         };
 
-        // Persistent Scent Grid
-        this.trailMap = null;      // Float32Array initialized on first resize
+        this.agents = [];
+        this.trail = null;
         this.width = 0;
         this.height = 0;
-
-        this.initAgents();
     }
 
-    initAgents() {
-        for (let i = 0; i < this.capacity; i++) {
-            this.x[i] = Math.random() * window.innerWidth;
-            this.y[i] = Math.random() * window.innerHeight;
-            this.heading[i] = Math.random() * Math.PI * 2;
-        }
-    }
-
-    /**
-     * Initializes the Scent Grid based on current canvas dimensions.
-     */
-    initGrid(w, h) {
+    init(w, h) {
         this.width = Math.floor(w);
         this.height = Math.floor(h);
-        this.trailMap = new Float32Array(this.width * this.height);
+        this.trail = new Float32Array(this.width * this.height);
+        this.agents = [];
+
+        for (let i = 0; i < this.capacity; i++) {
+            this.agents.push({
+                x: Math.random() * this.width,
+                y: Math.random() * this.height,
+                heading: Math.random() * Math.PI * 2
+            });
+        }
     }
 
-    /**
-     * The Core Simulation Loop
-     */
     update(nx, ny, w, h) {
-        if (!this.trailMap || this.width !== w || this.height !== h) {
-            this.initGrid(w, h);
+        if (!this.trail || this.width !== w || this.height !== h) {
+            this.init(w, h);
         }
 
-        const tw = this.width;
-        const th = this.height;
+        this.step_sense_and_rotate(nx, ny);
+        this.step_move();
+        this.step_deposit();
+        this.step_diffuse_and_decay();
+    }
 
-        // --- STEP 1: Agent Processing ---
-        for (let i = 0; i < this.capacity; i++) {
-            let x = this.x[i];
-            let y = this.y[i];
-            let ang = this.heading[i];
+    step_sense_and_rotate(nx, ny) {
+        const w = this.width;
+        const h = this.height;
 
-            // A. SENSING
-            // Look at three points in front of the agent
-            const vCenter = this.readSensor(x, y, ang, this.config.sensorDist, tw, th);
-            const vLeft = this.readSensor(x, y, ang - this.config.sensorAngle, this.config.sensorDist, tw, th);
-            const vRight = this.readSensor(x, y, ang + this.config.sensorAngle, this.config.sensorDist, tw, th);
+        for (let agent of this.agents) {
+            const sense = (angleOffset) => {
+                const lookAngle = agent.heading + angleOffset;
+                const sx = Math.round(agent.x + Math.cos(lookAngle) * this.config.sensorDist);
+                const sy = Math.round(agent.y + Math.sin(lookAngle) * this.config.sensorDist);
+                
+                // Boundary check
+                if (sx < 0 || sx >= w || sy < 0 || sy >= h) return -1;
+                return this.trail[sy * w + sx];
+            };
 
-            // B. STEERING (Based on Trail Map)
+            const vCenter = sense(0);
+            const vLeft = sense(this.config.sensorAngle);
+            const vRight = sense(-this.config.sensorAngle);
+
+            // Turning Logic from Jeff Jones
             if (vCenter > vLeft && vCenter > vRight) {
-                // Stay on path
+                // Continue straight
             } else if (vCenter < vLeft && vCenter < vRight) {
-                // Stochastic turning if both sides are equal
-                this.heading[i] += (Math.random() - 0.5) * 2 * this.config.turnSpeed;
+                // Randomly turn left or right
+                agent.heading += (Math.random() > 0.5 ? 1 : -1) * this.config.turnSpeed;
             } else if (vLeft > vRight) {
-                this.heading[i] -= this.config.turnSpeed;
+                agent.heading += this.config.turnSpeed;
             } else if (vRight > vLeft) {
-                this.heading[i] += this.config.turnSpeed;
+                agent.heading -= this.config.turnSpeed;
             }
 
-            // C. GAZE INFLUENCE (The Nutrients)
+            // --- GAZE INTERACTION ---
+            // If the user is looking at the screen, nudge the agents
             if (nx !== -1) {
-                const targetAng = Math.atan2((ny * h) - y, (nx * w) - x);
-                let diff = targetAng - this.heading[i];
-                // Wrap angle difference
+                const angleToGaze = Math.atan2((ny * h) - agent.y, (nx * w) - agent.x);
+                let diff = angleToGaze - agent.heading;
                 while (diff < -Math.PI) diff += Math.PI * 2;
                 while (diff > Math.PI) diff -= Math.PI * 2;
-                this.heading[i] += diff * this.config.gazeStrength;
+                agent.heading += diff * this.config.gazeInfluence;
             }
-
-            // D. MOVEMENT
-            this.heading[i] += (Math.random() - 0.5) * this.config.randomTurn;
-            x += Math.cos(this.heading[i]) * this.config.moveSpeed;
-            y += Math.sin(this.heading[i]) * this.config.moveSpeed;
-
-            // E. WALL HANDLING (Bounce/Wrap)
-            if (x < 0 || x >= tw) { 
-                this.heading[i] = Math.PI - this.heading[i]; 
-                x = Math.max(0, Math.min(tw - 1, x));
-            }
-            if (y < 0 || y >= th) { 
-                this.heading[i] = -this.heading[i]; 
-                y = Math.max(0, Math.min(th - 1, y));
-            }
-
-            this.x[i] = x;
-            this.y[i] = y;
-
-            // F. DEPOSIT SCENT
-            const idx = Math.floor(y) * tw + Math.floor(x);
-            this.trailMap[idx] += this.config.depositAmount;
         }
-
-        // --- STEP 2: Trail Map Physics (Diffusion & Decay) ---
-        this.processTrailMap(tw, th);
     }
 
-    /**
-     * Reads scent value at a specific offset from an agent
-     */
-    readSensor(x, y, angle, dist, w, h) {
-        const sx = Math.floor(x + Math.cos(angle) * dist);
-        const sy = Math.floor(y + Math.sin(angle) * dist);
-        if (sx < 0 || sx >= w || sy < 0 || sy >= h) return -1;
-        return this.trailMap[sy * w + sx];
+    step_move() {
+        for (let agent of this.agents) {
+            agent.x += Math.cos(agent.heading) * this.config.moveSpeed;
+            agent.y += Math.sin(agent.heading) * this.config.moveSpeed;
+
+            // Wrap Around
+            agent.x = (agent.x + this.width) % this.width;
+            agent.y = (agent.y + this.height) % this.height;
+        }
     }
 
-    /**
-     * Biological Decay: Simulates evaporation and nutrient spreading
-     */
-    processTrailMap(w, h) {
-        const newMap = new Float32Array(this.trailMap.length);
-        const d = this.config.diffusionRate;
-        const e = this.config.evaporationRate;
+    step_deposit() {
+        for (let agent of this.agents) {
+            const x = Math.round(agent.x);
+            const y = Math.round(agent.y);
+            const idx = y * this.width + x;
+            if (idx >= 0 && idx < this.trail.length) {
+                this.trail[idx] += this.config.depositAmount;
+            }
+        }
+    }
+
+    step_diffuse_and_decay() {
+        const old_trail = new Float32Array(this.trail);
+        const w = this.width;
+        const h = this.height;
+        const wt = this.config.weight;
 
         for (let y = 1; y < h - 1; y++) {
             for (let x = 1; x < w - 1; x++) {
                 const i = y * w + x;
                 
-                // 3x3 Box Blur (Diffusion)
-                const sum = (
-                    this.trailMap[i - w - 1] + this.trailMap[i - w] + this.trailMap[i - w + 1] +
-                    this.trailMap[i - 1]     + this.trailMap[i]     + this.trailMap[i + 1]     +
-                    this.trailMap[i + w - 1] + this.trailMap[i + w] + this.trailMap[i + w + 1]
-                ) / 9;
+                // 3x3 Gaussian Convolution
+                const diffused_value = (
+                    old_trail[i - w - 1] * wt[0] + old_trail[i - w] * wt[1] + old_trail[i - w + 1] * wt[2] +
+                    old_trail[i - 1]     * wt[3] + old_trail[i]     * wt[4] + old_trail[i + 1]     * wt[5] +
+                    old_trail[i + w - 1] * wt[6] + old_trail[i + w] * wt[7] + old_trail[i + w + 1] * wt[8]
+                );
 
-                // Combine Diffusion and Evaporation
-                newMap[i] = sum * e;
+                this.trail[i] = diffused_value * this.config.decayFactor;
             }
         }
-        this.trailMap = newMap;
     }
 
-    /**
-     * Render the Trail Map to the Canvas
-     */
     draw(ctx, w, h) {
-        const imageData = ctx.createImageData(w, h);
-        const data = imageData.data;
+        const imgData = ctx.createImageData(w, h);
+        const pixels = imgData.data;
 
-        for (let i = 0; i < this.trailMap.length; i++) {
-            const val = this.trailMap[i];
-            const px = i * 4;
+        for (let i = 0; i < this.trail.length; i++) {
+            const val = this.trail[i];
+            const idx = i * 4;
+
+            // Mapping: High scent = Dark Ink, Low scent = White Paper
+            // Using 255 - val creates the "Inverted" Mycelium look
+            const brightness = Math.max(0, 255 - (val * 180)); 
             
-            // MYCELIUM LOOK: High contrast, dark ink on light paper
-            // We map the scent value to an inverted grayscale
-            const brightness = Math.max(0, 255 - (val * 40)); 
-            
-            data[px] = brightness;     // R
-            data[px + 1] = brightness; // G
-            data[px + 2] = brightness; // B
-            data[px + 3] = 255;        // A (Fully Opaque)
+            pixels[idx]     = brightness; // R
+            pixels[idx + 1] = brightness; // G
+            pixels[idx + 2] = brightness; // B
+            pixels[idx + 3] = 255;        // A
         }
-
-        ctx.putImageData(imageData, 0, 0);
+        ctx.putImageData(imgData, 0, 0);
     }
 
     clear() {
-        if (this.trailMap) this.trailMap.fill(0);
-        this.initAgents();
+        if (this.trail) this.trail.fill(0);
     }
 }
