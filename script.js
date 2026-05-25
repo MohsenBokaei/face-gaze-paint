@@ -4,9 +4,9 @@ import { ParticleSystem } from './src/ParticleSystem.js';
 import { CalibrationManager } from './src/CalibrationManager.js';
 import { UIManager } from './src/UIManager.js';
 
-// --- 1. Global Variables (Accessible by all functions) ---
+// --- 1. Global Variables (Shared across all functions) ---
 let vision, gaze, painter, ui, calibration;
-let elements; // Define this here so toggleWebcam can see it
+let elements; 
 let isPaintingEnabled = false;
 let isTouchPainting = false;
 
@@ -14,7 +14,7 @@ let isTouchPainting = false;
  * Main App Entry Point
  */
 async function init() {
-    // Populate the elements object now that the DOM is ready
+    // Initialize the global elements object
     elements = {
         video: document.getElementById("webcam"),
         outputCanvas: document.getElementById("output_canvas"),
@@ -29,7 +29,6 @@ async function init() {
         clearBtn: document.getElementById("clear-paint-button")
     };
 
-    // Initialize Services
     vision = new VisionService();
     gaze = new GazeEngine(3.0, 0.3); 
     painter = new ParticleSystem(1024);
@@ -38,20 +37,15 @@ async function init() {
 
     try {
         await vision.initialize();
-        
-        // Reveal UI
         document.getElementById("demos").classList.remove("invisible");
         
-        // --- Event Bindings ---
-        elements.webcamBtn.onclick = toggleWebcam;
+        // Event Bindings
+        elements.webcamBtn.onclick = togglewebcam;
         elements.calibrateBtn.onclick = startCalibration;
-        elements.clearBtn.onclick = () => { 
-            painter.clear(); 
-            ui.clearPaintCanvas(); 
-        };
+        elements.clearBtn.onclick = () => { painter.clear(); ui.clearPaintCanvas(); };
         elements.fullscreenBtn.onclick = () => ui.toggleFullscreen(elements.paintCanvas);
 
-        // --- Touch & Mouse Event Handlers ---
+        // Touch/Mouse Painting Logic
         const handlePointer = (e) => {
             if (e.type.startsWith('touch')) e.preventDefault();
             const rect = elements.paintCanvas.getBoundingClientRect();
@@ -63,53 +57,34 @@ async function init() {
         elements.paintCanvas.onmousedown = () => { isTouchPainting = true; };
         window.onmouseup = () => { isTouchPainting = false; };
         elements.paintCanvas.onmousemove = (e) => { if (isTouchPainting) handlePointer(e); };
-
-        elements.paintCanvas.addEventListener('touchstart', (e) => { 
-            isTouchPainting = true; handlePointer(e); 
-        }, {passive: false});
+        elements.paintCanvas.addEventListener('touchstart', (e) => { isTouchPainting = true; handlePointer(e); }, {passive: false});
         elements.paintCanvas.addEventListener('touchend', () => { isTouchPainting = false; });
-        elements.paintCanvas.addEventListener('touchmove', (e) => { 
-            if (isTouchPainting) handlePointer(e); 
-        }, {passive: false});
+        elements.paintCanvas.addEventListener('touchmove', (e) => { if (isTouchPainting) handlePointer(e); }, {passive: false});
 
-        window.addEventListener('resize', () => ui.resizeAll());
-
-        // Start loop
+        window.onresize = () => ui.resizeAll();
         requestAnimationFrame(appLoop);
-        
     } catch (err) {
         console.error("Initialization failed:", err);
     }
 }
 
-/**
- * Main Animation Loop
- */
 function appLoop() {
     if (vision && vision.webcamRunning) {
         const results = vision.detectFrame(elements.video);
-
-        let isBlinking = false;
-        if (results?.faceBlendshapes?.[0]) {
-            const categories = results.faceBlendshapes[0].categories;
-            const blinkL = categories.find(c => c.categoryName === "eyeBlinkLeft")?.score || 0;
-            const blinkR = categories.find(c => c.categoryName === "eyeBlinkRight")?.score || 0;
-            if (blinkL > 0.45 && blinkR > 0.45) isBlinking = true;
-        }
 
         if (calibration.isCalibrating) {
             calibration.drawCurrentDot();
             const raw = gaze.calculateRawGaze(results);
             if (raw) {
                 calibration.currentPointSamples.push(raw);
-                if (calibration.currentPointSamples.length >= 45) { 
+                if (calibration.currentPointSamples.length >= 60) { 
                     calibration.processPointSamples(calibration.currentPointSamples);
                     calibration.currentPointSamples = [];
                     calibration.currentIndex++;
                     if (calibration.currentIndex >= calibration.sequence.length) {
-                        const result = calibration.solve();
-                        gaze.setCalibrationData(result);
-                        ui.setFeedback(`Calibrated!`);
+                        const data = calibration.solve();
+                        gaze.setCalibrationData(data);
+                        ui.setFeedback("Calibrated!");
                     }
                 }
             }
@@ -119,12 +94,9 @@ function appLoop() {
             if (results?.faceLandmarks) ui.drawFaceLandmarks(results.faceLandmarks[0]);
             if (results?.faceBlendshapes) ui.updateBlendshapesList(results.faceBlendshapes);
 
-            if (isPaintingEnabled && !isBlinking && !isTouchPainting) {
+            if (isPaintingEnabled && !isTouchPainting) {
                 const rect = elements.paintCanvas.getBoundingClientRect();
                 painter.add(point.x * rect.width, point.y * rect.height);
-                ui.setFeedback("");
-            } else if (isBlinking && isPaintingEnabled) {
-                ui.setFeedback("Paused (Blink Detected)");
             }
         }
 
@@ -135,12 +107,11 @@ function appLoop() {
     requestAnimationFrame(appLoop);
 }
 
-async function toggleWebcam() {
+async function togglewebcam() {
     if (vision.webcamRunning) {
         vision.stopWebcam(elements.video);
         isPaintingEnabled = false;
         elements.webcamBtn.innerText = "ENABLE WEBCAM";
-        ui.setFeedback("Webcam Disabled");
     } else {
         await vision.startWebcam(elements.video);
         elements.video.onloadedmetadata = () => {
@@ -148,15 +119,14 @@ async function toggleWebcam() {
                 ui.resizeAll();
                 isPaintingEnabled = true;
                 elements.webcamBtn.innerText = "DISABLE WEBCAM";
-                ui.setFeedback("");
-            }, 100);
+            }, 200);
         };
     }
 }
 
 function startCalibration() {
     if (!vision || !vision.webcamRunning) return;
-    ui.setFeedback("Follow the red dots...");
+    ui.setFeedback("Follow the dots...");
     calibration.start();
 }
 
