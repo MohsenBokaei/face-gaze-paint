@@ -1,167 +1,85 @@
 import { MathUtils } from './MathUtils.js';
 
-/**
- * GazeEngine: The brain of the app. 
- * Responsible for landmark extraction, raw gaze geometry, 
- * temporal smoothing, and applying calibration maps.
- */
 export class GazeEngine {
-    constructor(sensitivity = 3.0, smoothingFactor = 0.3) {
-        // Matched to original settings
+    constructor(sensitivity = 3.0, smoothingFactor = 0.25) {
         this.sensitivity = sensitivity;
         this.smoothingFactor = smoothingFactor;
-
-        // Internal State
         this.smoothedX = 0.5;
         this.smoothedY = 0.5;
         this.calibrated = false;
-        this.mapping = {
-            type: 'polynomial', // Default to polynomial
-            coeffsX: null,
-            coeffsY: null,
-            tpsParams: null
-        };
+        this.mapping = { type: 'polynomial', coeffsX: null, coeffsY: null, tpsParams: null };
 
-        // MediaPipe Face Mesh Indices
+        // Specific landmarks for Gaze Ratio logic
         this.indices = {
-            leftIris: [474, 475, 476, 477],
-            rightIris: [469, 470, 471, 472],
-            leftEyeInner: 133,
-            leftEyeOuter: 33,
-            rightEyeInner: 362,
-            rightEyeOuter: 263
+            leftIris: 468,
+            rightIris: 473,
+            leftEye: { left: 33, right: 133, top: 159, bottom: 145 },
+            rightEye: { left: 362, right: 263, top: 386, bottom: 374 }
         };
     }
 
     /**
-     * Processes results and returns a normalized {x, y} coordinate.
+     * Ported logic from Antoine Lame's GazeTracking
+     * Calculates the position of the pupil relative to the eye corners
      */
+    calculateGazeRatio(iris, eyeCorners) {
+        // Horizontal distance from left corner to iris
+        const dx = iris.x - eyeCorners.left.x;
+        const totalW = eyeCorners.right.x - eyeCorners.left.x;
+        const hRatio = dx / totalW;
+
+        // Vertical distance from top to iris
+        const dy = iris.y - eyeCorners.top.y;
+        const totalH = eyeCorners.bottom.y - eyeCorners.top.y;
+        const vRatio = dy / totalH;
+
+        return { x: hRatio, y: vRatio };
+    }
+
     getGazePoint(results) {
-        const raw = this.calculateRawGaze(results);
-        
-        // If we lose the face, return the last known smoothed position
-        if (!raw) return { x: this.smoothedX, y: this.smoothedY };
-
-        // 1. Temporal Smoothing (Exponential Moving Average)
-        this.smoothedX += (raw.x - this.smoothedX) * this.smoothingFactor;
-        this.smoothedY += (raw.y - this.smoothedY) * this.smoothingFactor;
-
-        let finalX = this.smoothedX;
-        let finalY = this.smoothedY;
-
-        // 2. Apply Calibration
-        if (this.calibrated) {
-            let mapped = null;
-            
-            if (this.mapping.type === 'polynomial' && this.mapping.coeffsX) {
-                mapped = MathUtils.applyPolynomialMapping(
-                    this.smoothedX, 
-                    this.smoothedY, 
-                    this.mapping.coeffsX, 
-                    this.mapping.coeffsY
-                );
-            } else if (this.mapping.type === 'tps' && this.mapping.tpsParams) {
-                mapped = MathUtils.applyTPSMapping(
-                    this.smoothedX, 
-                    this.smoothedY, 
-                    this.mapping.tpsParams
-                );
-            }
-
-            if (mapped && isFinite(mapped.x) && isFinite(mapped.y)) {
-                finalX = mapped.x;
-                finalY = mapped.y;
-            }
-        }
-
-        // 3. Final screen clamping (0.0 to 1.0)
-        return {
-            x: Math.max(0, Math.min(1, finalX)),
-            y: Math.max(0, Math.min(1, finalY))
-        };
-    }
-
-    /**
-     * Geometric calculation of gaze based on iris center vs eye corners.
-     */
-    calculateRawGaze(results) {
-        if (!results?.faceLandmarks?.[0]) return null;
-        const landmarks = results.faceLandmarks[0];
+        if (!results?.faceLandmarks?.[0]) return { x: this.smoothedX, y: this.smoothedY };
+        const lms = results.faceLandmarks[0];
 
         try {
-            // Get center of irises
-            const lI = this.calculateCenter(landmarks, this.indices.leftIris);
-            const rI = this.calculateCenter(landmarks, this.indices.rightIris);
+            // Get eye data
+            const leftRatio = this.calculateGazeRatio(lms[this.indices.leftIris], {
+                left: lms[this.indices.leftEye.left],
+                right: lms[this.indices.leftEye.right],
+                top: lms[this.indices.leftEye.top],
+                bottom: lms[this.indices.leftEye.bottom]
+            });
 
-            // Get eye corners
-            const lEi = landmarks[this.indices.leftEyeInner];
-            const lEo = landmarks[this.indices.leftEyeOuter];
-            const rEi = landmarks[this.indices.rightEyeInner];
-            const rEo = landmarks[this.indices.rightEyeOuter];
+            const rightRatio = this.calculateGazeRatio(lms[this.indices.rightIris], {
+                left: lms[this.indices.rightEye.left],
+                right: lms[this.indices.rightEye.right],
+                top: lms[this.indices.rightEye.top],
+                bottom: lms[this.indices.rightEye.bottom]
+            });
 
-            // Safety check: Exit if any necessary corner landmarks are missing
-            if (!lEi || !lEo || !rEi || !rEo) return null;
+            // Average the ratios from both eyes
+            const avgX = (leftRatio.x + rightRatio.x) / 2;
+            const avgY = (leftRatio.y + rightRatio.y) / 2;
 
-            // Calculate eye geometric centers
-            const lEc = { x: (lEi.x + lEo.x) / 2, y: (lEi.y + lEo.y) / 2 };
-            const rEc = { x: (rEi.x + rEo.x) / 2, y: (rEi.y + rEo.y) / 2 };
+            // Map ratio (usually 0.2 to 0.8) to screen 0.0 to 1.0
+            // We use the sensitivity to "stretch" the range
+            let rawX = 0.5 + (avgX - 0.5) * this.sensitivity;
+            let rawY = 0.5 + (avgY - 0.5) * (this.sensitivity * 1.5);
 
-            // Calculate eye widths for normalization
-            const lW = Math.abs(lEo.x - lEi.x);
-            const rW = Math.abs(rEo.x - rEi.x);
-            if (lW < 0.005 || rW < 0.005) return null;
+            // Smoothing
+            this.smoothedX += (rawX - this.smoothedX) * this.smoothingFactor;
+            this.smoothedY += (rawY - this.smoothedY) * this.smoothingFactor;
 
-            // Normalized offsets
-            const oX = (((lI.x - lEc.x) / lW) + ((rI.x - rEc.x) / rW)) / 2;
-            const oY = (((lI.y - lEc.y) / lW) + ((rI.y - rEc.y) / rW)) / 2;
+            let finalX = this.smoothedX;
+            let finalY = this.smoothedY;
 
-            // Apply sensitivity
-            let rawX = 0.5 - oX * this.sensitivity;
-            let rawY = 0.5 + oY * this.sensitivity;
-
-            // Wide-range clamping for calibration stability
-            rawX = Math.max(-1.0, Math.min(2.0, rawX));
-            rawY = Math.max(-1.0, Math.min(2.0, rawY));
-
-            return { x: rawX, y: rawY };
-        } catch (e) {
-            console.error("GazeEngine: Geometry Error", e);
-            return null;
-        }
-    }
-
-    /**
-     * Helper to find the average center of a set of landmarks.
-     */
-    calculateCenter(landmarks, indices) {
-        let sumX = 0, sumY = 0, valid = 0;
-        indices.forEach(idx => {
-            if (landmarks[idx] && isFinite(landmarks[idx].x)) {
-                sumX += landmarks[idx].x;
-                sumY += landmarks[idx].y;
-                valid++;
+            if (this.calibrated) {
+                const mapped = MathUtils.applyPolynomialMapping(this.smoothedX, this.smoothedY, this.mapping.coeffsX, this.mapping.coeffsY);
+                finalX = mapped.x; finalY = mapped.y;
             }
-        });
-        return valid > 0 ? { x: sumX / valid, y: sumY / valid } : { x: 0.5, y: 0.5 };
-    }
 
-    /**
-     * Updates the calibration profile. 
-     */
-    setCalibrationData(data) {
-        if (!data) return;
-        this.mapping.coeffsX = data.coeffsX;
-        this.mapping.coeffsY = data.coeffsY;
-        this.mapping.tpsParams = data.tpsParams;
-        this.calibrated = true;
-    }
-
-    /**
-     * Allows toggling between Polynomial and TPS math.
-     */
-    setMappingType(type) {
-        if (type === 'polynomial' || type === 'tps') {
-            this.mapping.type = type;
+            return { x: Math.max(0, Math.min(1, finalX)), y: Math.max(0, Math.min(1, finalY)) };
+        } catch (e) {
+            return { x: this.smoothedX, y: this.smoothedY };
         }
     }
 }
