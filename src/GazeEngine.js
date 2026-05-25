@@ -1,85 +1,77 @@
 import { MathUtils } from './MathUtils.js';
 
 export class GazeEngine {
-    constructor(sensitivity = 3.0, smoothingFactor = 0.25) {
+    constructor(sensitivity = 3.0, smoothingFactor = 0.3) {
         this.sensitivity = sensitivity;
         this.smoothingFactor = smoothingFactor;
         this.smoothedX = 0.5;
         this.smoothedY = 0.5;
         this.calibrated = false;
-        this.mapping = { type: 'polynomial', coeffsX: null, coeffsY: null, tpsParams: null };
-
-        // Specific landmarks for Gaze Ratio logic
-        this.indices = {
-            leftIris: 468,
-            rightIris: 473,
-            leftEye: { left: 33, right: 133, top: 159, bottom: 145 },
-            rightEye: { left: 362, right: 263, top: 386, bottom: 374 }
-        };
-    }
-
-    /**
-     * Ported logic from Antoine Lame's GazeTracking
-     * Calculates the position of the pupil relative to the eye corners
-     */
-    calculateGazeRatio(iris, eyeCorners) {
-        // Horizontal distance from left corner to iris
-        const dx = iris.x - eyeCorners.left.x;
-        const totalW = eyeCorners.right.x - eyeCorners.left.x;
-        const hRatio = dx / totalW;
-
-        // Vertical distance from top to iris
-        const dy = iris.y - eyeCorners.top.y;
-        const totalH = eyeCorners.bottom.y - eyeCorners.top.y;
-        const vRatio = dy / totalH;
-
-        return { x: hRatio, y: vRatio };
+        this.mapping = { coeffsX: null, coeffsY: null, tpsParams: null };
     }
 
     getGazePoint(results) {
-        if (!results?.faceLandmarks?.[0]) return { x: this.smoothedX, y: this.smoothedY };
-        const lms = results.faceLandmarks[0];
+        const raw = this.calculateRawGaze(results);
+        if (!raw) return { x: this.smoothedX, y: this.smoothedY };
+
+        this.smoothedX += (raw.x - this.smoothedX) * this.smoothingFactor;
+        this.smoothedY += (raw.y - this.smoothedY) * this.smoothingFactor;
+
+        let finalX = this.smoothedX;
+        let finalY = this.smoothedY;
+
+        if (this.calibrated) {
+            const mapped = MathUtils.applyPolynomialMapping(this.smoothedX, this.smoothedY, this.mapping.coeffsX, this.mapping.coeffsY);
+            if (mapped && isFinite(mapped.x)) {
+                finalX = mapped.x;
+                finalY = mapped.y;
+            }
+        }
+
+        return {
+            x: Math.max(0, Math.min(1, finalX)),
+            y: Math.max(0, Math.min(1, finalY))
+        };
+    }
+
+    calculateRawGaze(results) {
+        if (!results?.faceLandmarks?.[0]) return null;
+        const landmarks = results.faceLandmarks[0];
 
         try {
-            // Get eye data
-            const leftRatio = this.calculateGazeRatio(lms[this.indices.leftIris], {
-                left: lms[this.indices.leftEye.left],
-                right: lms[this.indices.leftEye.right],
-                top: lms[this.indices.leftEye.top],
-                bottom: lms[this.indices.leftEye.bottom]
-            });
+            // Original Proto Indices
+            const irisL = this.getCenter(landmarks, [474, 475, 476, 477]);
+            const irisR = this.getCenter(landmarks, [469, 470, 471, 472]);
+            const eyeL_In = landmarks[133], eyeL_Out = landmarks[33];
+            const eyeR_In = landmarks[362], eyeR_Out = landmarks[263];
 
-            const rightRatio = this.calculateGazeRatio(lms[this.indices.rightIris], {
-                left: lms[this.indices.rightEye.left],
-                right: lms[this.indices.rightEye.right],
-                top: lms[this.indices.rightEye.top],
-                bottom: lms[this.indices.rightEye.bottom]
-            });
+            if (!eyeL_In || !eyeR_In) return null;
 
-            // Average the ratios from both eyes
-            const avgX = (leftRatio.x + rightRatio.x) / 2;
-            const avgY = (leftRatio.y + rightRatio.y) / 2;
+            const lEc = { x: (eyeL_In.x + eyeL_Out.x) / 2, y: (eyeL_In.y + eyeL_Out.y) / 2 };
+            const rEc = { x: (eyeR_In.x + eyeR_Out.x) / 2, y: (eyeR_In.y + eyeR_Out.y) / 2 };
 
-            // Map ratio (usually 0.2 to 0.8) to screen 0.0 to 1.0
-            // We use the sensitivity to "stretch" the range
-            let rawX = 0.5 + (avgX - 0.5) * this.sensitivity;
-            let rawY = 0.5 + (avgY - 0.5) * (this.sensitivity * 1.5);
+            const lW = Math.abs(eyeL_Out.x - eyeL_In.x);
+            const rW = Math.abs(eyeR_Out.x - eyeR_In.x);
 
-            // Smoothing
-            this.smoothedX += (rawX - this.smoothedX) * this.smoothingFactor;
-            this.smoothedY += (rawY - this.smoothedY) * this.smoothingFactor;
+            const oX = (((irisL.x - lEc.x) / lW) + ((irisR.x - rEc.x) / rW)) / 2;
+            const oY = (((irisL.y - lEc.y) / lW) + ((irisR.y - rEc.y) / rW)) / 2;
 
-            let finalX = this.smoothedX;
-            let finalY = this.smoothedY;
+            return {
+                x: 0.5 - oX * this.sensitivity,
+                y: 0.5 + oY * this.sensitivity
+            };
+        } catch (e) { return null; }
+    }
 
-            if (this.calibrated) {
-                const mapped = MathUtils.applyPolynomialMapping(this.smoothedX, this.smoothedY, this.mapping.coeffsX, this.mapping.coeffsY);
-                finalX = mapped.x; finalY = mapped.y;
-            }
+    getCenter(lms, idx) {
+        let x = 0, y = 0;
+        idx.forEach(i => { x += lms[i].x; y += lms[i].y; });
+        return { x: x / idx.length, y: y / idx.length };
+    }
 
-            return { x: Math.max(0, Math.min(1, finalX)), y: Math.max(0, Math.min(1, finalY)) };
-        } catch (e) {
-            return { x: this.smoothedX, y: this.smoothedY };
-        }
+    setCalibrationData(data) {
+        this.mapping.coeffsX = data.coeffsX;
+        this.mapping.coeffsY = data.coeffsY;
+        this.calibrated = true;
     }
 }
