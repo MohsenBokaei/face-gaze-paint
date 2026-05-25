@@ -110,63 +110,31 @@ function appLoop() {
 async function togglewebcam() {
     if (vision.webcamRunning) {
         vision.stopWebcam(elements.video);
-
         isPaintingEnabled = false;
-
         elements.webcamBtn.innerText = "ENABLE WEBCAM";
-
-        // Clear overlay canvas
-        const ctx = elements.outputCanvas.getContext("2d");
-        ctx.clearRect(
-            0,
-            0,
-            elements.outputCanvas.width,
-            elements.outputCanvas.height
-        );
-
     } else {
         try {
-
-            // Start webcam
             await vision.startWebcam(elements.video);
-
-            // Ensure video starts
-            await elements.video.play();
-
-            // Wait a moment so browser calculates dimensions
-            await new Promise(resolve => setTimeout(resolve, 300));
-
-            // Resize all canvases correctly
-            ui.resizeAll();
-
-            // Force output canvas to match video
-            elements.outputCanvas.width = elements.video.videoWidth;
-            elements.outputCanvas.height = elements.video.videoHeight;
-
-            elements.outputCanvas.style.width = "100%";
-            elements.outputCanvas.style.height = "100%";
-
-            isPaintingEnabled = true;
-
-            elements.webcamBtn.innerText = "DISABLE WEBCAM";
-
-            console.log(
-                "Webcam Ready:",
-                elements.video.videoWidth,
-                elements.video.videoHeight
-            );
+            
+            // Critical for Chrome: ensure the video is actually playing
+            elements.video.play();
+            
+            // Check for dimensions every 100ms until they are ready
+            const checkDimensions = setInterval(() => {
+                if (elements.video.videoWidth > 0) {
+                    ui.resizeAll();
+                    isPaintingEnabled = true;
+                    elements.webcamBtn.innerText = "DISABLE WEBCAM";
+                    clearInterval(checkDimensions);
+                }
+            }, 100);
 
         } catch (e) {
-
             console.error("Webcam Error:", e);
-
-            alert(
-                "Could not access webcam. Please allow camera permissions."
-            );
+            alert("Camera access failed. Ensure you are on HTTPS and allowed permissions.");
         }
     }
 }
-
 function startCalibration() {
     if (!vision || !vision.webcamRunning) return;
     ui.setFeedback("Follow the dots...");
