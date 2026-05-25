@@ -15,49 +15,33 @@ export class GazeEngine {
         this.vBias = 0.15; 
     }
 
+        // Inside GazeEngine.js -> calculateRawGaze
     calculateRawGaze(results) {
-        if (!results?.faceLandmarks?.[0]) return null;
         const landmarks = results.faceLandmarks[0];
-
-        try {
-            // 1. ANCHORS (These points do not move with the eyes)
-            const noseBridge = landmarks[168]; // Stable point between eyes
-            const eyeL_In = landmarks[133];    // Inner corner Left
-            const eyeR_In = landmarks[362];    // Inner corner Right
-            
-            // 2. IRIS CENTERS
-            const irisL = this.getCenter(landmarks, [468]); // 468 is Iris Center
-            const irisR = this.getCenter(landmarks, [473]); // 473 is Iris Center
-
-            // 3. HORIZONTAL (X) - Still relative to eye width
-            const eyeWidth = Math.abs(landmarks[33].x - landmarks[133].x);
-            const oX = ((irisL.x - eyeL_In.x) + (irisR.x - eyeR_In.x)) / 2;
-
-            // 4. VERTICAL (Y) - THE FIX
-            // We measure how far the iris is from the STABLE nose bridge.
-            // We normalize this by the distance from the nose bridge to the nose tip (stable face scale).
-            const faceScale = Math.abs(landmarks[1].y - landmarks[168].y);
-            
-            // Calculate distance from bridge to iris
-            // If this value increases, you are looking down.
-            const distL = irisL.y - noseBridge.y;
-            const distR = irisR.y - noseBridge.y;
-            const avgDist = (distL + distR) / 2;
-
-            // Normalize Y: 
-            // We subtract a "neutral" offset (usually around 0.04 face units) 
-            const neutralY = 0.045; 
-            const oY = (avgDist / faceScale) - neutralY;
-
-            // 5. HEAD PITCH (Secondary vertical signal)
-            // If you tilt your chin down, this value changes.
-            const headPitch = (landmarks[1].y - landmarks[168].y); 
-
-            return {
-                x: 0.5 - (oX / eyeWidth * this.sensitivity),
-                y: 0.5 + (oY * this.vSensitivity) + this.vBias
-            };
-        } catch (e) { return null; }
+        const iris = landmarks[468]; // Iris Center 3D
+        const eyeCenter = landmarks[168]; // Stable Nose Bridge
+    
+        // The 'Depth' of the eye (approximate scale based on face size)
+        const faceDepthScale = Math.abs(landmarks[1].z - landmarks[168].z) || 0.1;
+        const eyeRadius = faceDepthScale * 0.5; // Estimated 3D radius of eyeball
+    
+        // Project the iris onto a 3D sphere
+        // This replicates the 'Line of Sight' vector from the papers
+        const dx = (iris.x - landmarks[133].x) / (landmarks[33].x - landmarks[133].x) - 0.5;
+        
+        // VERTICAL FIX: Use the Nose Bridge (168) as a fixed Y-anchor
+        // We calculate the 'arc' of the eye rotation
+        const dy = (iris.y - eyeCenter.y); 
+        
+        // Instead of linear Y, we use a Tangent-like boost 
+        // to simulate the iris moving around the curve of the eyeball
+        const verticalRotation = Math.atan2(dy, eyeRadius);
+    
+        return {
+            x: 0.5 - (dx * this.sensitivity),
+            // Use the rotation angle for Y instead of raw coordinate distance
+            y: 0.5 + (verticalRotation * this.vSensitivity) + this.vBias
+        };
     }
 
     getGazePoint(results) {
