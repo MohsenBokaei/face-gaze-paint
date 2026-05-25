@@ -102,17 +102,27 @@ async function togglewebcam() {
         isPaintingEnabled = false;
         elements.webcamBtn.innerText = "ENABLE WEBCAM";
     } else {
-        await vision.startWebcam(elements.video);
-        elements.video.onloadedmetadata = () => {
-            // Give the browser a moment to render the video frames
-            elements.video.play(); 
-            setTimeout(() => {
-                ui.resizeAll();
-                isPaintingEnabled = true;
-                elements.webcamBtn.innerText = "DISABLE WEBCAM";
-            }, 300);
-        };
+        try {
+            await vision.startWebcam(elements.video);
+            
+            // Explicitly set the video to play
+            elements.video.play();
+            
+            elements.video.onloadedmetadata = () => {
+                console.log("Webcam Metadata Loaded");
+                // Small timeout to allow the browser to calculate the CSS box
+                setTimeout(() => {
+                    ui.resizeAll();
+                    isPaintingEnabled = true;
+                    elements.webcamBtn.innerText = "DISABLE WEBCAM";
+                }, 500);
+            };
+        } catch (e) {
+            console.error("Webcam Error:", e);
+            alert("Could not access camera. Please check permissions.");
+        }
     }
+}
 
 function startCalibration() {
     if (!vision || !vision.webcamRunning) return;
