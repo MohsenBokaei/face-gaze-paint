@@ -1,7 +1,7 @@
 import { MathUtils } from './MathUtils.js';
 
 export class GazeEngine {
-    constructor(sensitivity = 3.0, smoothingFactor = 0.3) {
+    constructor(sensitivity = 3.0, smoothingFactor = 0.25) {
         this.sensitivity = sensitivity;
         this.smoothingFactor = smoothingFactor;
         this.smoothedX = 0.5;
