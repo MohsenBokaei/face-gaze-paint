@@ -98,8 +98,10 @@ export class UIManager {
      * Optional: Safe method for updating expressions if you re-add them later.
      */
     updateBlendshapesList(blendshapes) {
+        // Safe check: Only run if the element actually exists in the HTML
         if (!this.elements.blendShapesList || !blendshapes?.[0]?.categories) return;
 
+        // Filter to show most relevant shapes
         const important = ["eyeBlinkLeft", "eyeBlinkRight", "jawOpen", "mouthSmileLeft", "mouthSmileRight"];
         
         this.elements.blendShapesList.innerHTML = blendshapes[0].categories
@@ -107,10 +109,11 @@ export class UIManager {
             .map(s => `
                 <li class="blend-shapes-item">
                     <span class="blend-shapes-label">${s.categoryName}</span>
-                    <div style="flex-grow:1; margin: 0 10px; background:#eee; height:6px; border-radius:3px;">
-                        <div style="width:${s.score * 100}%; background:#6200ee; height:100%; border-radius:3px;"></div>
+                    <!-- Use consistent styling for the value bar -->
+                    <div style="flex-grow:1; margin: 0 10px; background:#e8eaed; height:6px; border-radius:3px;">
+                        <div class="blend-shapes-value" style="width:${s.score * 100}%"></div>
                     </div>
-                    <span>${s.score.toFixed(2)}</span>
+                    <span style="font-size: 10px;">${s.score.toFixed(2)}</span>
                 </li>`).join("");
     }
 
