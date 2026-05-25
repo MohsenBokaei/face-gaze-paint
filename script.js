@@ -3,7 +3,6 @@ import { GazeEngine } from './src/GazeEngine.js';
 import { ParticleSystem } from './src/ParticleSystem.js';
 import { CalibrationManager } from './src/CalibrationManager.js';
 import { UIManager } from './src/UIManager.js';
-// Note: MathUtils is usually imported inside the files above, not here.
 
 // Global variables
 let vision, gaze, painter, ui, calibration;
@@ -27,8 +26,10 @@ async function init() {
     };
 
     vision = new VisionService();
-    gaze = new GazeEngine(3.0, 0.3); 
-    painter = new ParticleSystem(1024);
+    // High sensitivity for better edge reach
+    gaze = new GazeEngine(4.0, 0.15); 
+    // Increased particle capacity for the "Flow-Field" effect
+    painter = new ParticleSystem(3000); 
     ui = new UIManager(elements);
     calibration = new CalibrationManager(elements.overlayCanvas, elements.overlayCanvas.getContext("2d"));
 
@@ -46,25 +47,21 @@ async function init() {
         elements.clearBtn.onclick = () => { painter.clear(); ui.clearPaintCanvas(); };
         elements.fullscreenBtn.onclick = () => ui.toggleFullscreen(elements.paintCanvas);
 
-        // --- Touch & Mouse Painting Logic ---
+        // Fallback Mouse/Touch logic
         const handlePointer = (e) => {
             if (e.type.startsWith('touch')) e.preventDefault();
             const rect = elements.paintCanvas.getBoundingClientRect();
             const clientX = e.touches ? e.touches[0].clientX : e.clientX;
             const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            painter.add(clientX - rect.left, clientY - rect.top);
+            // In Flow-Field mode, we treat the mouse as a temporary gaze source
+            painter.update((clientX - rect.left) / rect.width, (clientY - rect.top) / rect.height, rect.width, rect.height);
         };
 
         elements.paintCanvas.onmousedown = () => { isTouchPainting = true; };
         window.onmouseup = () => { isTouchPainting = false; };
-        elements.paintCanvas.onmousemove = (e) => { if (isTouchPainting) handlePointer(e); };
-        elements.paintCanvas.addEventListener('touchstart', (e) => { isTouchPainting = true; handlePointer(e); }, {passive: false});
-        elements.paintCanvas.addEventListener('touchend', () => { isTouchPainting = false; });
-        elements.paintCanvas.addEventListener('touchmove', (e) => { if (isTouchPainting) handlePointer(e); }, {passive: false});
-
+        
         window.onresize = () => ui.resizeAll();
         
-        // Start the loop
         requestAnimationFrame(appLoop);
     } catch (err) {
         console.error("Initialization failed:", err);
@@ -74,26 +71,60 @@ async function init() {
 function appLoop() {
     if (vision && vision.webcamRunning) {
         const results = vision.detectFrame(elements.video);
-        const point = gaze.getGazePoint(results);
         const rect = elements.paintCanvas.getBoundingClientRect();
 
-        // 1. Update the UI Indicator
-        ui.renderGazeIndicator(point.x, point.y);
+        // --- CALIBRATION MODE ---
+        if (calibration.isCalibrating) {
+            calibration.drawCurrentDot();
+            const raw = gaze.calculateRawGaze(results);
+            
+            if (raw) {
+                // Ignore the first X frames so the user has time to focus on the dot
+                calibration.settleCounter++; 
+                
+                if (calibration.settleCounter > calibration.config.settleFrames) {
+                    calibration.currentPointSamples.push(raw);
+                }
 
-        // 2. Clear the canvas slightly to create "trails" 
-        // (This makes the silk look like it's moving)
-        ui.paintCtx.fillStyle = 'rgba(244, 247, 246, 0.1)'; // Matches body background
-        ui.paintCtx.fillRect(0, 0, rect.width, rect.height);
+                // If we have enough stable samples for this point
+                if (calibration.currentPointSamples.length >= calibration.config.samplesPerPoint) {
+                    calibration.processPointSamples(calibration.currentPointSamples);
+                    calibration.currentPointSamples = [];
+                    calibration.settleCounter = 0; 
+                    calibration.currentIndex++;
 
-        // 3. Update the whole field based on gaze
-        painter.update(point.x, point.y, rect.width, rect.height);
+                    // Check if we finished all 9 points
+                    if (calibration.currentIndex >= calibration.sequence.length) {
+                        const data = calibration.solve();
+                        if (data) {
+                            gaze.setCalibrationData(data);
+                            ui.setFeedback("Calibration Complete!");
+                        }
+                    }
+                }
+            }
+        } 
         
-        // 4. Draw the field
-        painter.draw(ui.paintCtx);
+        // --- PAINTING MODE ---
+        else {
+            const point = gaze.getGazePoint(results);
+            ui.renderGazeIndicator(point.x, point.y);
+            
+            if (results?.faceLandmarks) {
+                ui.drawFaceLandmarks(results.faceLandmarks[0]);
+            }
 
-        if (results?.faceLandmarks) {
-            ui.drawFaceLandmarks(results.faceLandmarks[0]);
+            if (isPaintingEnabled) {
+                // FLOW-FIELD: We don't "add" particles, we influence the existing field
+                painter.update(point.x, point.y, rect.width, rect.height);
+            }
         }
+
+        // Always render the painter (it creates the "Silk" movement)
+        // Draw a semi-transparent rectangle to create the "trails" effect
+        ui.paintCtx.fillStyle = 'rgba(244, 247, 246, 0.08)'; 
+        ui.paintCtx.fillRect(0, 0, rect.width, rect.height);
+        painter.draw(ui.paintCtx);
     }
     requestAnimationFrame(appLoop);
 }
@@ -102,22 +133,19 @@ async function togglewebcam() {
     if (vision.webcamRunning) {
         vision.stopWebcam(elements.video);
         isPaintingEnabled = false;
-        elements.webcamBtn.innerText = "ENABLE WEBCAM"; // Corrected
+        elements.webcamBtn.innerText = "ENABLE WEBCAM";
     } else {
         try {
             await vision.startWebcam(elements.video);
-            
             elements.video.play();
-            
             const checkDimensions = setInterval(() => {
                 if (elements.video.videoWidth > 0) {
                     ui.resizeAll();
                     isPaintingEnabled = true;
-                    elements.webcamBtn.innerText = "DISABLE WEBCAM"; // Corrected
+                    elements.webcamBtn.innerText = "DISABLE WEBCAM";
                     clearInterval(checkDimensions);
                 }
             }, 100);
-
         } catch (e) {
             console.error("Webcam Error:", e);
             alert("Could not access camera.");
@@ -127,7 +155,7 @@ async function togglewebcam() {
 
 function startCalibration() {
     if (!vision || !vision.webcamRunning) return;
-    ui.setFeedback("Follow the dots...");
+    ui.setFeedback("Focus on the center of the shrinking dots...");
     calibration.start();
 }
 
