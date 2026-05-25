@@ -83,18 +83,17 @@ export class UIManager {
         const ctx = this.gazeCtx;
         const rect = this.elements.gazeCanvas.getBoundingClientRect();
 
-        // Clear using logical pixels (because of setTransform)
         ctx.clearRect(0, 0, rect.width, rect.height);
         
-        // Draw crosshair
-        ctx.strokeStyle = "#ccc";
+        // Crosshair (Always based on current rect)
+        ctx.strokeStyle = "#bbb";
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(rect.width / 2, 0); ctx.lineTo(rect.width / 2, rect.height);
         ctx.moveTo(0, rect.height / 2); ctx.lineTo(rect.width, rect.height / 2);
         ctx.stroke();
 
-        // Draw red gaze dot
+        // Gaze Dot
         ctx.fillStyle = "red";
         ctx.beginPath();
         ctx.arc(x * rect.width, y * rect.height, 6, 0, Math.PI * 2);
