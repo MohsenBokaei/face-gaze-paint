@@ -72,59 +72,47 @@ async function init() {
     }
 }
 
-function appLoop() {
+// Inside script.js, update the appLoop function:
+
+function appLoop(timestamp) { // Added timestamp for smooth noise
     if (vision && vision.webcamRunning) {
         const results = vision.detectFrame(elements.video);
         const rect = elements.paintCanvas.getBoundingClientRect();
-        
-        // Get the current gaze position (will use calibration if available)
         const point = gaze.getGazePoint(results);
 
-        // --- 1. CALIBRATION MODE ---
         if (calibration.isCalibrating) {
-            // ALWAYS draw the dot so the user sees it
             calibration.drawCurrentDot(); 
-
             const raw = gaze.calculateRawGaze(results);
             if (raw) {
-                // Wait for eyes to stop moving before recording
                 calibration.settleCounter++; 
                 if (calibration.settleCounter > calibration.config.settleFrames) {
                     calibration.currentPointSamples.push(raw);
                 }
-
-                // If enough samples are collected for the current dot
                 if (calibration.currentPointSamples.length >= calibration.config.samplesPerPoint) {
                     calibration.processPointSamples(calibration.currentPointSamples);
                     calibration.currentPointSamples = [];
                     calibration.settleCounter = 0; 
                     calibration.currentIndex++;
-
-                    // If all 9 points are finished, solve the mapping
                     if (calibration.currentIndex >= calibration.sequence.length) {
                         const data = calibration.solve();
-                        if (data) {
-                            gaze.setCalibrationData(data);
-                            ui.setFeedback("Calibrated Successfully!");
-                        }
+                        if (data) gaze.setCalibrationData(data);
+                        ui.setFeedback("Painting Mode Active");
                     }
                 }
             }
         } 
-        // --- 2. PAINTING MODE ---
         else {
             ui.renderGazeIndicator(point.x, point.y);
             
-            // Create "Motion Trails" by not clearing the canvas fully
-            ui.paintCtx.fillStyle = 'rgba(244, 247, 246, 0.08)'; 
+            // --- THE PAINT EFFECT ---
+            // High transparency (0.015) creates long-lasting "paint" trails
+            ui.paintCtx.fillStyle = 'rgba(0, 0, 0, 0.015)'; 
             ui.paintCtx.fillRect(0, 0, rect.width, rect.height);
 
-            // If webcam is on and not touch painting, use gaze to drive the flow
             if (isPaintingEnabled && !isTouchPainting) {
-                painter.update(point.x, point.y, rect.width, rect.height);
+                painter.update(point.x, point.y, rect.width, rect.height, timestamp);
             } else {
-                // If not painting, particles just drift naturally
-                painter.update(-1, -1, rect.width, rect.height); 
+                painter.update(-1, -1, rect.width, rect.height, timestamp); 
             }
             
             painter.draw(ui.paintCtx);
