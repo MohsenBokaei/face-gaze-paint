@@ -129,12 +129,14 @@ h1 {
     box-shadow: 0 4px 6px rgba(0,0,0,0.05);
 }
 
+/* style.css */
 #paint_canvas {
     flex-grow: 1;
     width: 100%;
-    background: #000; /* Change to black for a "space dust" effect */
-    border-radius: 8px;
-    cursor: none; /* Hide cursor to focus on gaze */
+    background: #050505; /* Very dark grey/black */
+    border-radius: 12px;
+    box-shadow: inset 0 0 50px rgba(0,0,0,1); /* Adds depth */
+    cursor: none;
 }
 
 .button-row {
