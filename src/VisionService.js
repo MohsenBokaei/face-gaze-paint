@@ -55,7 +55,8 @@ export class VisionService {
             
             return new Promise((resolve) => {
                 videoElement.onloadedmetadata = () => {
-                    videoElement.play();
+                    // Ensure the video is explicitly set to play
+                    videoElement.play(); 
                     this.webcamRunning = true;
                     resolve(true);
                 };
