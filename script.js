@@ -110,16 +110,19 @@ function appLoop() {
 }
 
 async function toggleWebcam() {
-    const video = document.getElementById("webcam");
     if (vision.webcamRunning) {
-        vision.stopWebcam(video);
+        vision.stopWebcam(elements.video);
         isPaintingEnabled = false;
-        document.getElementById("webcamButton").innerText = "ENABLE WEBCAM";
+        elements.webcamBtn.innerText = "ENABLE WEBCAM";
     } else {
-        await vision.startWebcam(video);
-        isPaintingEnabled = true;
-        document.getElementById("webcamButton").innerText = "DISABLE WEBCAM";
-        ui.resizeAll();
+        await vision.startWebcam(elements.video);
+        
+        // Wait a split second for the video stream to report its actual size
+        elements.video.onloadedmetadata = () => {
+            ui.resizeAll();
+            isPaintingEnabled = true;
+            elements.webcamBtn.innerText = "DISABLE WEBCAM";
+        };
     }
 }
 
