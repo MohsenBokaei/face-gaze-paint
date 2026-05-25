@@ -76,38 +76,32 @@ async function init() {
 
 // Inside script.js, update the appLoop logic for the fractal behavior:
 
+// Inside script.js appLoop()
+
 function appLoop() {
     if (vision && vision.webcamRunning) {
         const results = vision.detectFrame(elements.video);
         const rect = elements.paintCanvas.getBoundingClientRect();
         const point = gaze.getGazePoint(results);
 
-        if (calibration.isCalibrating) {
-            calibration.drawCurrentDot(); 
-            // ... calibration logic (same as before) ...
-        } 
-        else {
+        if (!calibration.isCalibrating) {
+            // 1. DIFFUSION (Blur slightly)
+            // This spreads the "scent" so particles can find it
+            ui.paintCtx.globalAlpha = 0.9; // Slow decay
+            
+            // 2. DECAY (Fade slightly)
+            // We draw the canvas over itself with a slight blur/offset
+            ui.paintCtx.drawImage(elements.paintCanvas, 0, 0);
+            
+            // 3. UPDATE MYCELIUM
+            // Pass the canvas context so particles can "smell" the existing lines
+            painter.update(point.x, point.y, rect.width, rect.height, ui.paintCtx);
+            
+            // 4. DRAW
+            painter.draw(ui.paintCtx);
+            
+            // UI Feedback
             ui.renderGazeIndicator(point.x, point.y);
-            
-            // --- THE FRACTAL PAINT EFFECT ---
-            // We use a VERY low alpha (0.005) for clearing.
-            // This allows the fractal structures to persist and overlap.
-            ui.paintCtx.fillStyle = 'rgba(0, 0, 0, 0.005)'; 
-            ui.paintCtx.fillRect(0, 0, rect.width, rect.height);
-
-            if (isPaintingEnabled) {
-                // If user is looking at the screen, morph the fractal
-                painter.update(point.x, point.y, rect.width, rect.height);
-            } else {
-                // If no gaze, let it stay in its current shape
-                painter.update(-1, -1, rect.width, rect.height); 
-            }
-            
-            painter.draw(ui.paintCtx, rect.width, rect.height);
-
-            if (results?.faceLandmarks) {
-                ui.drawFaceLandmarks(results.faceLandmarks[0]);
-            }
         }
     }
     requestAnimationFrame(appLoop);
