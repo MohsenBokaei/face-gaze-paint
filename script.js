@@ -35,6 +35,10 @@ async function init() {
     try {
         await vision.initialize();
         document.getElementById("demos").classList.remove("invisible");
+
+        setTimeout(() => {
+            ui.resizeAll();
+        }, 500);
         
         // --- Event Bindings ---
         elements.webcamBtn.onclick = togglewebcam;
