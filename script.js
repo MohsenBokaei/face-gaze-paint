@@ -74,40 +74,26 @@ async function init() {
 function appLoop() {
     if (vision && vision.webcamRunning) {
         const results = vision.detectFrame(elements.video);
-
-        if (calibration.isCalibrating) {
-            calibration.drawCurrentDot();
-            const raw = gaze.calculateRawGaze(results);
-            if (raw) {
-                calibration.currentPointSamples.push(raw);
-                if (calibration.currentPointSamples.length >= 60) { 
-                    calibration.processPointSamples(calibration.currentPointSamples);
-                    calibration.currentPointSamples = [];
-                    calibration.currentIndex++;
-                    if (calibration.currentIndex >= calibration.sequence.length) {
-                        const data = calibration.solve();
-                        gaze.setCalibrationData(data);
-                        ui.setFeedback("Calibrated!");
-                    }
-                }
-            }
-        } else {
-            const point = gaze.getGazePoint(results);
-            ui.renderGazeIndicator(point.x, point.y);
-            
-            if (results?.faceLandmarks) {
-                ui.drawFaceLandmarks(results.faceLandmarks[0]);
-            }
-
-            if (isPaintingEnabled && !isTouchPainting) {
-                const rect = elements.paintCanvas.getBoundingClientRect();
-                painter.add(point.x * rect.width, point.y * rect.height);
-            }
-        }
-
-        painter.update();
+        const point = gaze.getGazePoint(results);
         const rect = elements.paintCanvas.getBoundingClientRect();
-        painter.draw(ui.paintCtx, rect.width, rect.height);
+
+        // 1. Update the UI Indicator
+        ui.renderGazeIndicator(point.x, point.y);
+
+        // 2. Clear the canvas slightly to create "trails" 
+        // (This makes the silk look like it's moving)
+        ui.paintCtx.fillStyle = 'rgba(244, 247, 246, 0.1)'; // Matches body background
+        ui.paintCtx.fillRect(0, 0, rect.width, rect.height);
+
+        // 3. Update the whole field based on gaze
+        painter.update(point.x, point.y, rect.width, rect.height);
+        
+        // 4. Draw the field
+        painter.draw(ui.paintCtx);
+
+        if (results?.faceLandmarks) {
+            ui.drawFaceLandmarks(results.faceLandmarks[0]);
+        }
     }
     requestAnimationFrame(appLoop);
 }
