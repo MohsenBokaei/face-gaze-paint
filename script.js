@@ -5,9 +5,10 @@ import { CalibrationManager } from './src/CalibrationManager.js';
 import { UIManager } from './src/UIManager.js';
 
 let vision, gaze, painter, ui, calibration;
-let elements, isPaintingEnabled = false;
+let elements;
+let isPaintingEnabled = false;
 
-// --- 1. Event Handlers ---
+// --- تابع مدیریت دوربین ---
 async function togglewebcam() {
     if (vision.webcamRunning) {
         vision.stopWebcam(elements.video);
@@ -29,13 +30,14 @@ async function togglewebcam() {
     }
 }
 
+// --- تابع کالیبراسیون ---
 function startCalibration() {
     if (!vision || !vision.webcamRunning) return;
     ui.setFeedback("Focus on the center of the colonies...");
     calibration.start();
 }
 
-// --- 2. The Simulation Loop ---
+// --- حلقه اصلی شبیه‌سازی ---
 function appLoop() {
     if (vision && vision.webcamRunning) {
         const results = vision.detectFrame(elements.video);
@@ -65,7 +67,7 @@ function appLoop() {
         } else {
             ui.renderGazeIndicator(point.x, point.y);
             
-            // Only nudge colony toward gaze if painting is enabled
+            // اگر دوربین فعال باشد، مختصات نگاه ارسال می‌شود، در غیر این صورت -1
             const nx = isPaintingEnabled ? point.x : -1;
             const ny = isPaintingEnabled ? point.y : -1;
 
@@ -78,7 +80,7 @@ function appLoop() {
     requestAnimationFrame(appLoop);
 }
 
-// --- 3. Initializer ---
+// --- مقداردهی اولیه ---
 async function init() {
     elements = {
         video: document.getElementById("webcam"),
