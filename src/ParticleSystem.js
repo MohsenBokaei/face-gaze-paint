@@ -25,7 +25,6 @@ export class ParticleSystem {
     update(nx, ny, w, h) {
         if (!this.trailMap || this.width !== w || this.height !== h) this.init(w, h);
 
-        // Gaze attraction (Drop scent at gaze point)
         if (nx !== -1) {
             const gx = Math.floor(nx * w), gy = Math.floor(ny * h);
             const idx = gy * this.width + gx;
@@ -48,7 +47,6 @@ export class ParticleSystem {
             this.trailMap[Math.floor(this.y[i]) * this.width + Math.floor(this.x[i])] += this.config.deposit;
         }
 
-        // Diffusion and Decay
         const newMap = new Float32Array(this.trailMap.length);
         for (let y = 1; y < this.height - 1; y++) {
             for (let x = 1; x < this.width - 1; x++) {
@@ -74,8 +72,4 @@ export class ParticleSystem {
             const px = i * 4;
             img.data[px] = b; img.data[px+1] = b; img.data[px+2] = b; img.data[px+3] = 255;
         }
-        ctx.putImageData(img, 0, 0);
-    }
-
-    clear() { this.trailMap?.fill(0); }
-}
+        ctx.
