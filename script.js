@@ -4,9 +4,9 @@ import { ParticleSystem } from './src/ParticleSystem.js';
 import { CalibrationManager } from './src/CalibrationManager.js';
 import { UIManager } from './src/UIManager.js';
 
-// Global instances
+// Global variables
 let vision, gaze, painter, ui, calibration;
-let elements;
+let elements; 
 let isPaintingEnabled = false;
 let isTouchPainting = false;
 
@@ -17,12 +17,13 @@ async function init() {
         gazeCanvas: document.getElementById("gaze_canvas"),
         paintCanvas: document.getElementById("paint_canvas"),
         overlayCanvas: document.getElementById("calibration_fullscreen"),
-        blendShapesList: document.getElementById("video-blend-shapes"),
         feedback: document.getElementById("calibration-feedback"),
         webcamBtn: document.getElementById("webcamButton"),
         calibrateBtn: document.getElementById("calibrate-button"),
         fullscreenBtn: document.getElementById("fullscreen-button"),
-        clearBtn: document.getElementById("clear-paint-button")
+        clearBtn: document.getElementById("clear-paint-button"),
+        // Make this optional so it doesn't crash if the HTML is gone
+        blendShapesList: document.getElementById("video-blend-shapes") 
     };
 
     vision = new VisionService();
@@ -34,18 +35,18 @@ async function init() {
     try {
         await vision.initialize();
         document.getElementById("demos").classList.remove("invisible");
-        ui.resizeAll();
-
-        // Event Bindings
+        
         elements.webcamBtn.onclick = togglewebcam;
         elements.calibrateBtn.onclick = startCalibration;
         elements.clearBtn.onclick = () => { painter.clear(); ui.clearPaintCanvas(); };
         elements.fullscreenBtn.onclick = () => ui.toggleFullscreen(elements.paintCanvas);
 
         window.onresize = () => ui.resizeAll();
+        
+        // Start the loop
         requestAnimationFrame(appLoop);
     } catch (err) {
-        console.error("Init failed:", err);
+        console.error("Initialization failed:", err);
     }
 }
 
@@ -58,7 +59,7 @@ function appLoop() {
             const raw = gaze.calculateRawGaze(results);
             if (raw) {
                 calibration.currentPointSamples.push(raw);
-                if (calibration.currentPointSamples.length >= 50) { 
+                if (calibration.currentPointSamples.length >= 60) { 
                     calibration.processPointSamples(calibration.currentPointSamples);
                     calibration.currentPointSamples = [];
                     calibration.currentIndex++;
@@ -71,16 +72,23 @@ function appLoop() {
             }
         } else {
             const point = gaze.getGazePoint(results);
-            ui.renderGazeIndicator(point.x, point.y);
-            if (results?.faceLandmarks) ui.drawFaceLandmarks(results.faceLandmarks[0]);
             
+            // --- UI UPDATES ---
+            ui.renderGazeIndicator(point.x, point.y);
+            
+            // Draw the Mesh (This was likely missing or frozen)
+            if (results?.faceLandmarks) {
+                ui.drawFaceLandmarks(results.faceLandmarks[0]);
+            }
 
+            // Gaze Painting logic
             if (isPaintingEnabled && !isTouchPainting) {
                 const rect = elements.paintCanvas.getBoundingClientRect();
                 painter.add(point.x * rect.width, point.y * rect.height);
             }
         }
 
+        // Keep physics and paint rendering running
         painter.update();
         const rect = elements.paintCanvas.getBoundingClientRect();
         painter.draw(ui.paintCtx, rect.width, rect.height);
@@ -106,7 +114,8 @@ async function togglewebcam() {
 }
 
 function startCalibration() {
-    if (!vision.webcamRunning) return;
+    if (!vision || !vision.webcamRunning) return;
+    ui.setFeedback("Follow the dots...");
     calibration.start();
 }
 
