@@ -1,58 +1,47 @@
 import { MathUtils } from './MathUtils.js';
 
 /**
- * CalibrationManager: Manages the calibration state machine, 
- * dot sequence, data sampling, outlier rejection, and solving (Poly & TPS).
+ * CalibrationManager: Optimized for extreme-edge coverage and 
+ * high-fidelity gaze mapping.
  */
 export class CalibrationManager {
     constructor(overlayCanvas, overlayCtx) {
         this.canvas = overlayCanvas;
         this.ctx = overlayCtx;
         
-        // Settings - 100% matched to original lines 7-12
         this.config = {
-            gridSize: 4, 
-            includeCenter: true, 
-            pointDuration: 1500, // ms
-            settleTime: 500,      // ms (Wait for eyes to focus)
-            sampleDuration: 700,   // ms (Actual recording window)
-            samplesPerPoint: 20, 
-            outlierThreshold: 1.75
+            // 9-point grid provides the best balance of speed and edge accuracy
+            pointsToCollect: 9, 
+            samplesPerPoint: 45, // Increased for better statistical mean
+            settleFrames: 20,    // Ignore the first 20 frames to allow eye to settle
+            outlierThreshold: 1.5 // Tightened to reject saccades (eye jumps)
         };
 
-        // State
         this.isCalibrating = false;
         this.currentIndex = 0;
         this.sequence = [];
         this.collectedPoints = [];
         this.currentPointSamples = [];
-        this.isSampling = false;
+        this.settleCounter = 0;
     }
 
     /**
-     * Logic from original generateCalibrationSequence (lines 16-39)
+     * Generates a 3x3 grid at the absolute limits of the screen.
+     * Hits 2% and 98% to ensure the "Look Down" logic has extreme data.
      */
     generateSequence() {
-        const { gridSize, includeCenter } = this.config;
+        const margins = [0.03, 0.5, 0.97]; // Absolute edges + centers
         const sequence = [];
-        const step = 1.0 / (gridSize + 1);
-        const margin = step;
 
-        for (let i = 0; i < gridSize; i++) {
-            for (let j = 0; j < gridSize; j++) {
-                let x = margin + i * (1.0 - 2 * margin) / (gridSize - 1);
-                let y = margin + j * (1.0 - 2 * margin) / (gridSize - 1);
+        for (let y of margins) {
+            for (let x of margins) {
                 sequence.push({ x, y });
             }
         }
 
-        if (includeCenter) {
-            const hasCenter = sequence.some(p => Math.abs(p.x - 0.5) < 1e-6 && Math.abs(p.y - 0.5) < 1e-6);
-            if (!hasCenter) sequence.push({ x: 0.5, y: 0.5 });
-        }
-        
-        this.sequence = sequence;
-        return sequence;
+        // Randomize order to prevent the user from "pre-moving" their eyes
+        this.sequence = sequence.sort(() => Math.random() - 0.5);
+        return this.sequence;
     }
 
     start() {
@@ -60,102 +49,115 @@ export class CalibrationManager {
         this.isCalibrating = true;
         this.currentIndex = 0;
         this.collectedPoints = [];
+        this.currentPointSamples = [];
+        this.settleCounter = 0;
         this.canvas.style.display = "block";
     }
 
     /**
-     * Visuals matched to original drawCurrentDot (lines 463-475)
+     * Visual Feedback: Shrinking Target.
+     * Forces the user's pupil to contract and focus on a single point.
      */
     drawCurrentDot() {
         const point = this.sequence[this.currentIndex];
+        if (!point) return;
+
         const px = point.x * this.canvas.width;
         const py = point.y * this.canvas.height;
 
+        // Calculate progress (0.0 to 1.0)
+        const progress = this.currentPointSamples.length / this.config.samplesPerPoint;
+        
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // Red fill
-        this.ctx.fillStyle = "red";
+        // 1. Draw Outer "Focus" Ring
+        this.ctx.strokeStyle = "rgba(100, 100, 255, 0.5)";
+        this.ctx.lineWidth = 2;
         this.ctx.beginPath();
-        this.ctx.arc(px, py, 20, 0, Math.PI * 2);
+        this.ctx.arc(px, py, 30, 0, Math.PI * 2);
+        this.ctx.stroke();
+
+        // 2. Draw Shrinking Inner Target
+        // Starts large/red, ends tiny/green
+        const radius = Math.max(3, 25 * (1 - progress));
+        const hue = progress * 120; // 0 (Red) to 120 (Green)
+        
+        this.ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+        this.ctx.beginPath();
+        this.ctx.arc(px, py, radius, 0, Math.PI * 2);
         this.ctx.fill();
 
-        // White stroke
-        this.ctx.strokeStyle = "white";
-        this.ctx.lineWidth = 3;
-        this.ctx.stroke();
+        // 3. Label for user
+        this.ctx.fillStyle = "white";
+        this.ctx.font = "12px Inter";
+        this.ctx.textAlign = "center";
+        this.ctx.fillText(`Point ${this.currentIndex + 1}/9: Focus on the center`, px, py + 45);
     }
 
     /**
-     * Outlier Rejection logic matched to original finishGazeSampling (lines 496-540)
+     * Advanced Outlier Rejection.
+     * Discards noisy data from when the user blinks or looks away.
      */
     processPointSamples(samples) {
-        if (samples.length < 5) return;
+        if (samples.length < 10) return;
 
-        const sumX = samples.reduce((a, b) => a + b.x, 0);
-        const sumY = samples.reduce((a, b) => a + b.y, 0);
-        const meanX = sumX / samples.length;
-        const meanY = sumY / samples.length;
+        // Calculate Mean
+        const meanX = samples.reduce((a, b) => a + b.x, 0) / samples.length;
+        const meanY = samples.reduce((a, b) => a + b.y, 0) / samples.length;
 
-        const distances = samples.map(s => Math.sqrt(Math.pow(s.x - meanX, 2) + Math.pow(s.y - meanY, 2)));
-        const avgDist = distances.reduce((a, b) => a + b, 0) / distances.length;
-        const stdDev = Math.sqrt(distances.reduce((a, d) => a + Math.pow(d - avgDist, 2), 0) / distances.length);
+        // Calculate Standard Deviation
+        const dists = samples.map(s => Math.sqrt((s.x - meanX)**2 + (s.y - meanY)**2));
+        const avgDist = dists.reduce((a, b) => a + b, 0) / dists.length;
         
-        const threshold = avgDist + this.config.outlierThreshold * Math.max(stdDev, 0.0001);
-        
-        const filtered = samples.filter((s, i) => distances[i] <= threshold);
-        const finalSamples = filtered.length >= 3 ? filtered : samples;
+        // Threshold: Discard samples that are too far from the average gaze for this dot
+        const filtered = samples.filter((s, i) => dists[i] < avgDist * this.config.outlierThreshold);
 
-        this.collectedPoints.push({
-            targetX: this.sequence[this.currentIndex].x,
-            targetY: this.sequence[this.currentIndex].y,
-            avgRawX: finalSamples.reduce((a, b) => a + b.x, 0) / finalSamples.length,
-            avgRawY: finalSamples.reduce((a, b) => a + b.y, 0) / finalSamples.length
-        });
+        if (filtered.length > 5) {
+            this.collectedPoints.push({
+                targetX: this.sequence[this.currentIndex].x,
+                targetY: this.sequence[this.currentIndex].y,
+                avgRawX: filtered.reduce((a, b) => a + b.x, 0) / filtered.length,
+                avgRawY: filtered.reduce((a, b) => a + b.y, 0) / filtered.length
+            });
+        }
     }
 
     /**
-     * SOLVER: Matched to lines 547-606 (Includes both Poly and TPS support)
+     * TPS Solver: Handles the non-linear "warp" of looking up and down.
      */
     solve() {
         this.canvas.style.display = "none";
         this.isCalibrating = false;
 
-        if (this.collectedPoints.length < 6) throw new Error("Not enough data");
+        if (this.collectedPoints.length < 5) {
+            console.error("Calibration failed: Not enough stable points.");
+            return null;
+        }
 
-        // 1. Solve Polynomial Regression
-        const A = [];
-        const bX = [];
-        const bY = [];
+        // Calculate TPS Parameters (as seen in the research papers)
+        const tpsParams = this.calculateTPS(this.collectedPoints);
 
+        // Also calculate legacy Polynomial for fallback
+        const A = [], bX = [], bY = [];
         this.collectedPoints.forEach(p => {
-            const x = p.avgRawX;
-            const y = p.avgRawY;
+            const x = p.avgRawX, y = p.avgRawY;
             A.push([x * x, x * y, y * y, x, y, 1]);
-            bX.push(p.targetX);
-            bY.push(p.targetY);
+            bX.push(p.targetX); bY.push(p.targetY);
         });
 
         const AT = MathUtils.transpose(A);
         const ATA = MathUtils.multiplyMatrices(AT, A);
-        
         const coeffsX = MathUtils.solveLinearSystem(ATA, MathUtils.multiplyMatrixVector(AT, bX));
         const coeffsY = MathUtils.solveLinearSystem(ATA, MathUtils.multiplyMatrixVector(AT, bY));
-
-        // 2. Solve TPS (Thin Plate Spline) - Restoring logic from lines 566-606
-        const tpsParams = this.calculateTPS(this.collectedPoints);
 
         return { coeffsX, coeffsY, tpsParams };
     }
 
-    /**
-     * Logic from original calculateTPSParameters (lines 566-601)
-     */
     calculateTPS(points) {
         const n = points.length;
         const size = n + 3;
         const L = Array(size).fill(0).map(() => Array(size).fill(0));
 
-        // Construct K matrix
         for (let i = 0; i < n; i++) {
             for (let j = i; j < n; j++) {
                 const dx = points[i].avgRawX - points[j].avgRawX;
@@ -165,7 +167,6 @@ export class CalibrationManager {
             }
         }
 
-        // Add P and PT
         for (let i = 0; i < n; i++) {
             L[i][n] = L[n][i] = 1.0;
             L[i][n+1] = L[n+1][i] = points[i].avgRawX;
