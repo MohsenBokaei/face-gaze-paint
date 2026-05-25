@@ -44,6 +44,19 @@ export class GazeEngine {
         };
     }
 
+        // Inside GazeEngine.js
+    setCalibrationData(data) {
+        this.mapping.coeffsX = data.coeffsX;
+        this.mapping.coeffsY = data.coeffsY;
+        
+        // Calculate the 'Kappa Offset' (The vertical error at center screen)
+        // If the center point (0.5, 0.5) is consistently off, we shift the whole world.
+        const centerError = data.centerRawY - 0.5;
+        this.vBias -= centerError * 0.5; 
+        
+        this.calibrated = true;
+    }
+
     getGazePoint(results) {
         const raw = this.calculateRawGaze(results);
         if (!raw) return { x: this.smoothedX, y: this.smoothedY };
