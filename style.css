@@ -132,10 +132,9 @@ h1 {
 #paint_canvas {
     flex-grow: 1;
     width: 100%;
-    background: #fff;
-    border: 1px solid #eee;
+    background: #000; /* Change to black for a "space dust" effect */
     border-radius: 8px;
-    cursor: crosshair;
+    cursor: none; /* Hide cursor to focus on gaze */
 }
 
 .button-row {
