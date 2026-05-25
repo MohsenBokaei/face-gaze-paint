@@ -68,32 +68,34 @@ async function init() {
     }
 }
 
+// src/script.js
+
 function appLoop() {
     if (vision && vision.webcamRunning) {
         const results = vision.detectFrame(elements.video);
         const rect = elements.paintCanvas.getBoundingClientRect();
 
-        // --- CALIBRATION MODE ---
+        // Check for results before doing gaze math
+        const point = gaze.getGazePoint(results);
+
         if (calibration.isCalibrating) {
-            calibration.drawCurrentDot();
+            // This must run even if results are null so the dot stays visible
+            calibration.drawCurrentDot(); 
+
+            // Only sample if the AI actually sees a face
             const raw = gaze.calculateRawGaze(results);
-            
             if (raw) {
-                // Ignore the first X frames so the user has time to focus on the dot
                 calibration.settleCounter++; 
-                
                 if (calibration.settleCounter > calibration.config.settleFrames) {
                     calibration.currentPointSamples.push(raw);
                 }
 
-                // If we have enough stable samples for this point
                 if (calibration.currentPointSamples.length >= calibration.config.samplesPerPoint) {
                     calibration.processPointSamples(calibration.currentPointSamples);
                     calibration.currentPointSamples = [];
                     calibration.settleCounter = 0; 
                     calibration.currentIndex++;
 
-                    // Check if we finished all 9 points
                     if (calibration.currentIndex >= calibration.sequence.length) {
                         const data = calibration.solve();
                         if (data) {
@@ -103,28 +105,18 @@ function appLoop() {
                     }
                 }
             }
-        } 
-        
-        // --- PAINTING MODE ---
-        else {
-            const point = gaze.getGazePoint(results);
+        } else {
+            // Painting Logic (Unchanged)
             ui.renderGazeIndicator(point.x, point.y);
-            
+            ui.paintCtx.fillStyle = 'rgba(244, 247, 246, 0.08)'; 
+            ui.paintCtx.fillRect(0, 0, rect.width, rect.height);
+            painter.update(point.x, point.y, rect.width, rect.height);
+            painter.draw(ui.paintCtx);
+
             if (results?.faceLandmarks) {
                 ui.drawFaceLandmarks(results.faceLandmarks[0]);
             }
-
-            if (isPaintingEnabled) {
-                // FLOW-FIELD: We don't "add" particles, we influence the existing field
-                painter.update(point.x, point.y, rect.width, rect.height);
-            }
         }
-
-        // Always render the painter (it creates the "Silk" movement)
-        // Draw a semi-transparent rectangle to create the "trails" effect
-        ui.paintCtx.fillStyle = 'rgba(244, 247, 246, 0.08)'; 
-        ui.paintCtx.fillRect(0, 0, rect.width, rect.height);
-        painter.draw(ui.paintCtx);
     }
     requestAnimationFrame(appLoop);
 }
