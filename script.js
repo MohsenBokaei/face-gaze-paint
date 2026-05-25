@@ -73,7 +73,7 @@ function appLoop() {
             const point = gaze.getGazePoint(results);
             ui.renderGazeIndicator(point.x, point.y);
             if (results?.faceLandmarks) ui.drawFaceLandmarks(results.faceLandmarks[0]);
-            if (results?.faceBlendshapes) ui.updateBlendshapesList(results.faceBlendshapes);
+            
 
             if (isPaintingEnabled && !isTouchPainting) {
                 const rect = elements.paintCanvas.getBoundingClientRect();
