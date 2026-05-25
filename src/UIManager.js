@@ -44,16 +44,14 @@ export class UIManager {
     drawFaceLandmarks(landmarks) {
         if (!landmarks) return;
         
-        // Use internal buffer size of the canvas to match AI coordinates
+        // Ensure we are clearing the canvas every frame to keep it transparent
         this.canvasCtx.clearRect(0, 0, this.elements.outputCanvas.width, this.elements.outputCanvas.height);
         
         const dm = this.drawingUtils;
         const FL = FaceLandmarker;
 
-        // Mesh Tesselation
+        // Draw mesh with clear colors
         dm.drawConnectors(landmarks, FL.FACE_LANDMARKS_TESSELATION, {color: "#C0C0C070", lineWidth: 1});
-        
-        // Eyes
         dm.drawConnectors(landmarks, FL.FACE_LANDMARKS_RIGHT_EYE, {color: "#FF3030", lineWidth: 2});
         dm.drawConnectors(landmarks, FL.FACE_LANDMARKS_LEFT_EYE, {color: "#30FF30", lineWidth: 2});
     }
