@@ -85,22 +85,18 @@ function appLoop() {
         const point = gaze.getGazePoint(results);
 
         if (!calibration.isCalibrating) {
-            // 1. DIFFUSION (Blur slightly)
-            // This spreads the "scent" so particles can find it
-            ui.paintCtx.globalAlpha = 0.9; // Slow decay
+            // In Physarum mode, the painter manages its own pixel buffer.
+            // We don't fillRect/clear here.
             
-            // 2. DECAY (Fade slightly)
-            // We draw the canvas over itself with a slight blur/offset
-            ui.paintCtx.drawImage(elements.paintCanvas, 0, 0);
+            const nx = isPaintingEnabled ? point.x : -1;
+            const ny = isPaintingEnabled ? point.y : -1;
+
+            // Update the complex grid logic
+            painter.update(nx, ny, rect.width, rect.height);
             
-            // 3. UPDATE MYCELIUM
-            // Pass the canvas context so particles can "smell" the existing lines
-            painter.update(point.x, point.y, rect.width, rect.height, ui.paintCtx);
-            
-            // 4. DRAW
-            painter.draw(ui.paintCtx);
-            
-            // UI Feedback
+            // Draw the finished trail map
+            painter.draw(ui.paintCtx, rect.width, rect.height);
+
             ui.renderGazeIndicator(point.x, point.y);
         }
     }
