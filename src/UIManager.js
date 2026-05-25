@@ -33,25 +33,20 @@ export class UIManager {
             outCanvas.height = video.videoHeight;
         }
 
-        // 2. High-DPI Scaling Logic
-        const dpr = window.devicePixelRatio || 1;
-
-        // --- ASPECT RATIO SYNC ---
-        // First, get the real size of the big paint canvas
+        // 2. ASPECT RATIO SYNC (The Fix)
         const paintRect = paintCanvas.getBoundingClientRect();
+        if (paintRect.width > 0 && paintRect.height > 0) {
+            // Update the CSS Variable so the small canvas matches the big one
+            const ratio = paintRect.width / paintRect.height;
+            gazeCanvas.style.setProperty('--canvas-aspect', `${ratio}`);
+        }
+
+        // 3. High-DPI Scaling for all canvases
+        const dpr = window.devicePixelRatio || 1;
         
-        // Calculate the ratio (e.g., 0.75 for a 4:3 canvas)
-        const canvasRatio = paintRect.height / paintRect.width;
-
-        // Apply that ratio to the small Gaze Indicator's STYLE height
-        const gazeWidth = gazeCanvas.clientWidth;
-        gazeCanvas.style.height = (gazeWidth * canvasRatio) + "px";
-        // -------------------------
-
-        // 3. Finalize buffer sizes for both
         [paintCanvas, gazeCanvas].forEach(c => {
             const rect = c.getBoundingClientRect();
-            if (rect.width > 0) {
+            if (rect.width > 0 && rect.height > 0) {
                 const ctx = c.getContext("2d");
                 c.width = rect.width * dpr;
                 c.height = rect.height * dpr;
@@ -59,7 +54,7 @@ export class UIManager {
             }
         });
         
-        console.log(`Ratios Synced. Canvas Ratio: ${canvasRatio.toFixed(2)}`);
+        console.log("UI Ratios Resynced");
     }
 
     /**
