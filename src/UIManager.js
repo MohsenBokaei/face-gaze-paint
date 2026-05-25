@@ -24,30 +24,42 @@ export class UIManager {
     resizeAll() {
         const video = this.elements.video;
         const outCanvas = this.elements.outputCanvas;
+        const paintCanvas = this.elements.paintCanvas;
+        const gazeCanvas = this.elements.gazeCanvas;
 
-        // 1. Face Mesh Canvas: Must match raw webcam pixels for AI alignment
+        // 1. Sync Face Mesh Canvas to raw webcam resolution
         if (video.videoWidth > 0) {
             outCanvas.width = video.videoWidth;
             outCanvas.height = video.videoHeight;
-            // CSS handles the absolute positioning and 100% stretch
         }
 
-        // 2. High-DPI Scaling for Gaze and Paint canvases
+        // 2. High-DPI Scaling Logic
         const dpr = window.devicePixelRatio || 1;
+
+        // --- ASPECT RATIO SYNC ---
+        // First, get the real size of the big paint canvas
+        const paintRect = paintCanvas.getBoundingClientRect();
         
-        [this.elements.paintCanvas, this.elements.gazeCanvas].forEach(c => {
+        // Calculate the ratio (e.g., 0.75 for a 4:3 canvas)
+        const canvasRatio = paintRect.height / paintRect.width;
+
+        // Apply that ratio to the small Gaze Indicator's STYLE height
+        const gazeWidth = gazeCanvas.clientWidth;
+        gazeCanvas.style.height = (gazeWidth * canvasRatio) + "px";
+        // -------------------------
+
+        // 3. Finalize buffer sizes for both
+        [paintCanvas, gazeCanvas].forEach(c => {
             const rect = c.getBoundingClientRect();
-            // Only resize if the element is visible on screen
             if (rect.width > 0) {
                 const ctx = c.getContext("2d");
                 c.width = rect.width * dpr;
                 c.height = rect.height * dpr;
-                // Normalize the coordinate system so 1 unit = 1 CSS pixel
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             }
         });
         
-        console.log(`Resolution Synced: Webcam ${video.videoWidth}x${video.videoHeight}`);
+        console.log(`Ratios Synced. Canvas Ratio: ${canvasRatio.toFixed(2)}`);
     }
 
     /**
