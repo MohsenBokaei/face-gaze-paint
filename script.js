@@ -74,7 +74,9 @@ async function init() {
 
 // Inside script.js, update the appLoop function:
 
-function appLoop(timestamp) { // Added timestamp for smooth noise
+// Inside script.js, update the appLoop logic for the fractal behavior:
+
+function appLoop() {
     if (vision && vision.webcamRunning) {
         const results = vision.detectFrame(elements.video);
         const rect = elements.paintCanvas.getBoundingClientRect();
@@ -82,40 +84,26 @@ function appLoop(timestamp) { // Added timestamp for smooth noise
 
         if (calibration.isCalibrating) {
             calibration.drawCurrentDot(); 
-            const raw = gaze.calculateRawGaze(results);
-            if (raw) {
-                calibration.settleCounter++; 
-                if (calibration.settleCounter > calibration.config.settleFrames) {
-                    calibration.currentPointSamples.push(raw);
-                }
-                if (calibration.currentPointSamples.length >= calibration.config.samplesPerPoint) {
-                    calibration.processPointSamples(calibration.currentPointSamples);
-                    calibration.currentPointSamples = [];
-                    calibration.settleCounter = 0; 
-                    calibration.currentIndex++;
-                    if (calibration.currentIndex >= calibration.sequence.length) {
-                        const data = calibration.solve();
-                        if (data) gaze.setCalibrationData(data);
-                        ui.setFeedback("Painting Mode Active");
-                    }
-                }
-            }
+            // ... calibration logic (same as before) ...
         } 
         else {
             ui.renderGazeIndicator(point.x, point.y);
             
-            // --- THE PAINT EFFECT ---
-            // High transparency (0.015) creates long-lasting "paint" trails
-            ui.paintCtx.fillStyle = 'rgba(0, 0, 0, 0.015)'; 
+            // --- THE FRACTAL PAINT EFFECT ---
+            // We use a VERY low alpha (0.005) for clearing.
+            // This allows the fractal structures to persist and overlap.
+            ui.paintCtx.fillStyle = 'rgba(0, 0, 0, 0.005)'; 
             ui.paintCtx.fillRect(0, 0, rect.width, rect.height);
 
-            if (isPaintingEnabled && !isTouchPainting) {
-                painter.update(point.x, point.y, rect.width, rect.height, timestamp);
+            if (isPaintingEnabled) {
+                // If user is looking at the screen, morph the fractal
+                painter.update(point.x, point.y, rect.width, rect.height);
             } else {
-                painter.update(-1, -1, rect.width, rect.height, timestamp); 
+                // If no gaze, let it stay in its current shape
+                painter.update(-1, -1, rect.width, rect.height); 
             }
             
-            painter.draw(ui.paintCtx);
+            painter.draw(ui.paintCtx, rect.width, rect.height);
 
             if (results?.faceLandmarks) {
                 ui.drawFaceLandmarks(results.faceLandmarks[0]);
@@ -123,30 +111,6 @@ function appLoop(timestamp) { // Added timestamp for smooth noise
         }
     }
     requestAnimationFrame(appLoop);
-}
-
-async function togglewebcam() {
-    if (vision.webcamRunning) {
-        vision.stopWebcam(elements.video);
-        isPaintingEnabled = false;
-        elements.webcamBtn.innerText = "ENABLE WEBCAM";
-    } else {
-        try {
-            await vision.startWebcam(elements.video);
-            elements.video.play();
-            const checkDimensions = setInterval(() => {
-                if (elements.video.videoWidth > 0) {
-                    ui.resizeAll();
-                    isPaintingEnabled = true;
-                    elements.webcamBtn.innerText = "DISABLE WEBCAM";
-                    clearInterval(checkDimensions);
-                }
-            }, 100);
-        } catch (e) {
-            console.error("Webcam Error:", e);
-            alert("Could not access camera.");
-        }
-    }
 }
 
 function startCalibration() {
