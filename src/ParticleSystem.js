@@ -1,85 +1,71 @@
 /**
- * ParticleSystem: High-Fluidity / Painting Mode.
- * Features: HSLA color cycles, steering behaviors, and velocity-based scaling.
+ * FractalSystem: Based on Clifford Attractors.
+ * Your gaze (nx, ny) controls the constants (a, b, c, d) that define the fractal.
  */
 export class ParticleSystem {
-    constructor(capacity = 3500) {
+    constructor(capacity = 5000) {
         this.capacity = capacity;
+        // The points representing the current "state" of the fractal
         this.x = new Float32Array(capacity);
         this.y = new Float32Array(capacity);
-        this.vx = new Float32Array(capacity);
-        this.vy = new Float32Array(capacity);
         this.hue = new Float32Array(capacity);
-        this.size = new Float32Array(capacity);
+        
+        // Fractal parameters influenced by gaze
+        this.a = -1.4; this.b = 1.6; this.c = 1.0; this.d = 0.7;
+        
         this.init();
     }
 
     init() {
         for (let i = 0; i < this.capacity; i++) {
-            this.x[i] = Math.random() * window.innerWidth;
-            this.y[i] = Math.random() * window.innerHeight;
-            this.vx[i] = 0;
-            this.vy[i] = 0;
-            this.hue[i] = Math.random() * 360; 
-            this.size[i] = 1 + Math.random() * 3;
+            this.x[i] = (Math.random() - 0.5) * 2;
+            this.y[i] = (Math.random() - 0.5) * 2;
+            this.hue[i] = Math.random() * 360;
         }
     }
 
-    update(nx, ny, w, h, time) {
-        for (let i = 0; i < this.capacity; i++) {
-            // 1. Natural Fluid Drift (using sine-wave noise)
-            // This makes them move like they are underwater
-            const noise = (Math.sin(time * 0.001 + i) + Math.cos(time * 0.0005 + i)) * 0.2;
-            this.vx[i] += Math.cos(this.hue[i] + noise) * 0.05;
-            this.vy[i] += Math.sin(this.hue[i] + noise) * 0.05;
-
-            // 2. Gaze Magnet (Steering)
-            if (nx !== -1) {
-                const dx = (nx * w) - this.x[i];
-                const dy = (ny * h) - this.y[i];
-                const dist = Math.sqrt(dx * dx + dy * dy) + 1;
-                
-                // Slow "Steering" force instead of raw pull
-                const strength = 0.15;
-                if (dist < 400) {
-                    this.vx[i] += (dx / dist) * strength;
-                    this.vy[i] += (dy / dist) * strength;
-                    // Color shifts toward the gaze
-                    this.hue[i] = (this.hue[i] + 1) % 360;
-                }
-            }
-
-            // 3. Viscosity (Damping) - This is what makes it "Slow and Fluid"
-            this.vx[i] *= 0.92;
-            this.vy[i] *= 0.92;
-
-            this.x[i] += this.vx[i];
-            this.y[i] += this.vy[i];
-
-            // 4. Edge Bounce (Soft wrap)
-            if (this.x[i] < 0) this.x[i] = w;
-            if (this.x[i] > w) this.x[i] = 0;
-            if (this.y[i] < 0) this.y[i] = h;
-            if (this.y[i] > h) this.y[i] = 0;
+    /**
+     * Update the fractal parameters based on gaze.
+     * Moving eyes changes the "dimension" of the fractal.
+     */
+    update(nx, ny, w, h) {
+        if (nx !== -1) {
+            // Map gaze 0-1 to attractor parameter ranges (approx -3 to 3)
+            this.a = (nx - 0.5) * 6;
+            this.b = (ny - 0.5) * 6;
         }
-    }
 
-    draw(ctx) {
-        // Use 'lighter' composite for a glowing, neon paint effect
-        ctx.globalCompositeOperation = 'lighter';
-        
         for (let i = 0; i < this.capacity; i++) {
-            const speed = Math.sqrt(this.vx[i]**2 + this.vy[i]**2);
+            let oldX = this.x[i];
+            let oldY = this.y[i];
+
+            // Clifford Attractor Equations:
+            // x_{n+1} = sin(a * y_n) + c * cos(a * x_n)
+            // y_{n+1} = sin(b * x_n) + d * cos(b * y_n)
+            this.x[i] = Math.sin(this.a * oldY) + this.c * Math.cos(this.a * oldX);
+            this.y[i] = Math.sin(this.b * oldX) + this.d * Math.cos(this.b * oldY);
             
-            // Draw lines for trails
-            ctx.beginPath();
-            ctx.lineWidth = this.size[i] * (speed * 0.5);
-            ctx.strokeStyle = `hsla(${this.hue[i]}, 80%, 60%, 0.15)`;
-            ctx.moveTo(this.x[i], this.y[i]);
-            ctx.lineTo(this.x[i] - this.vx[i] * 3, this.y[i] - this.vy[i] * 3);
-            ctx.stroke();
+            // Color shifts based on the "position" in the fractal
+            this.hue[i] = (this.hue[i] + 0.5) % 360;
         }
-        
+    }
+
+    draw(ctx, w, h) {
+        ctx.globalCompositeOperation = 'lighter';
+        const centerX = w / 2;
+        const centerY = h / 2;
+        const scale = Math.min(w, h) * 0.2; // Zoom of the fractal
+
+        for (let i = 0; i < this.capacity; i++) {
+            // Map the attractor's abstract -2..2 coordinates to screen pixels
+            const screenX = centerX + this.x[i] * scale;
+            const screenY = centerY + this.y[i] * scale;
+
+            ctx.beginPath();
+            ctx.fillStyle = `hsla(${this.hue[i]}, 80%, 60%, 0.2)`;
+            // Drawing tiny rectangles or dots to build the fractal "density"
+            ctx.fillRect(screenX, screenY, 1.5, 1.5);
+        }
         ctx.globalCompositeOperation = 'source-over';
     }
 
