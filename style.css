@@ -164,4 +164,17 @@ h1 {
     display: none;
 }
 
+video {
+    object-fit: cover;
+    background: #000;
+}
+
+#output_canvas {
+    background: transparent;
+}
+
+.videoView {
+    min-height: 280px;
+}
+
 .invisible { display: none; }
