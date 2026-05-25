@@ -1,73 +1,80 @@
-/**
- * FractalSystem: Based on Clifford Attractors.
- * Your gaze (nx, ny) controls the constants (a, b, c, d) that define the fractal.
- */
 export class ParticleSystem {
-    constructor(capacity = 5000) {
+    constructor(capacity = 4000) {
         this.capacity = capacity;
-        // The points representing the current "state" of the fractal
         this.x = new Float32Array(capacity);
         this.y = new Float32Array(capacity);
-        this.hue = new Float32Array(capacity);
+        this.angle = new Float32Array(capacity); // Direction of growth
         
-        // Fractal parameters influenced by gaze
-        this.a = -1.4; this.b = 1.6; this.c = 1.0; this.d = 0.7;
+        // Mycelium Settings
+        this.sensorAngle = 45 * (Math.PI / 180);
+        this.sensorDist = 15;
+        this.turnSpeed = 0.2;
+        this.moveSpeed = 1.2;
         
         this.init();
     }
 
     init() {
         for (let i = 0; i < this.capacity; i++) {
-            this.x[i] = (Math.random() - 0.5) * 2;
-            this.y[i] = (Math.random() - 0.5) * 2;
-            this.hue[i] = Math.random() * 360;
+            this.x[i] = Math.random() * window.innerWidth;
+            this.y[i] = Math.random() * window.innerHeight;
+            this.angle[i] = Math.random() * Math.PI * 2;
         }
     }
 
-    /**
-     * Update the fractal parameters based on gaze.
-     * Moving eyes changes the "dimension" of the fractal.
-     */
-    update(nx, ny, w, h) {
-        if (nx !== -1) {
-            // Map gaze 0-1 to attractor parameter ranges (approx -3 to 3)
-            this.a = (nx - 0.5) * 6;
-            this.b = (ny - 0.5) * 6;
-        }
+    update(nx, ny, w, h, trailCtx) {
+        // trailCtx is a hidden canvas used for "scent" detection
+        const trailData = trailCtx.getImageData(0, 0, w, h).data;
 
         for (let i = 0; i < this.capacity; i++) {
-            let oldX = this.x[i];
-            let oldY = this.y[i];
-
-            // Clifford Attractor Equations:
-            // x_{n+1} = sin(a * y_n) + c * cos(a * x_n)
-            // y_{n+1} = sin(b * x_n) + d * cos(b * y_n)
-            this.x[i] = Math.sin(this.a * oldY) + this.c * Math.cos(this.a * oldX);
-            this.y[i] = Math.sin(this.b * oldX) + this.d * Math.cos(this.b * oldY);
+            // 1. SENSING LOGIC
+            const sensorDist = this.sensorDist;
             
-            // Color shifts based on the "position" in the fractal
-            this.hue[i] = (this.hue[i] + 0.5) % 360;
+            // Look Center, Left, and Right
+            const v1 = this.getSensorValue(this.x[i], this.y[i], this.angle[i], sensorDist, w, h, trailData);
+            const v2 = this.getSensorValue(this.x[i], this.y[i], this.angle[i] - this.sensorAngle, sensorDist, w, h, trailData);
+            const v3 = this.getSensorValue(this.x[i], this.y[i], this.angle[i] + this.sensorAngle, sensorDist, w, h, trailData);
+
+            // Turn toward the strongest trail
+            if (v1 > v2 && v1 > v3) { /* Stay straight */ }
+            else if (v1 < v2 && v1 < v3) { this.angle[i] += (Math.random() - 0.5) * 2 * this.turnSpeed; }
+            else if (v2 > v3) { this.angle[i] -= this.turnSpeed; }
+            else if (v3 > v2) { this.angle[i] += this.turnSpeed; }
+
+            // 2. GAZE ATTRACTION
+            if (nx !== -1) {
+                const dx = (nx * w) - this.x[i];
+                const dy = (ny * h) - this.y[i];
+                const angleToGaze = Math.atan2(dy, dx);
+                // Slowly nudge angle toward gaze
+                this.angle[i] += (angleToGaze - this.angle[i]) * 0.02;
+            }
+
+            // 3. MOVE
+            this.x[i] += Math.cos(this.angle[i]) * this.moveSpeed;
+            this.y[i] += Math.sin(this.angle[i]) * this.moveSpeed;
+
+            // Bounce off walls
+            if (this.x[i] <= 0 || this.x[i] >= w) this.angle[i] = Math.PI - this.angle[i];
+            if (this.y[i] <= 0 || this.y[i] >= h) this.angle[i] = -this.angle[i];
         }
     }
 
-    draw(ctx, w, h) {
-        ctx.globalCompositeOperation = 'lighter';
-        const centerX = w / 2;
-        const centerY = h / 2;
-        const scale = Math.min(w, h) * 0.2; // Zoom of the fractal
+    getSensorValue(x, y, angle, dist, w, h, data) {
+        const sx = Math.floor(x + Math.cos(angle) * dist);
+        const sy = Math.floor(y + Math.sin(angle) * dist);
+        if (sx < 0 || sx >= w || sy < 0 || sy >= h) return 0;
+        // Return the "Red" channel as the scent value
+        return data[(sy * w + sx) * 4];
+    }
 
+    draw(ctx) {
+        // High-contrast ink look
+        ctx.fillStyle = "black";
         for (let i = 0; i < this.capacity; i++) {
-            // Map the attractor's abstract -2..2 coordinates to screen pixels
-            const screenX = centerX + this.x[i] * scale;
-            const screenY = centerY + this.y[i] * scale;
-
-            ctx.beginPath();
-            ctx.fillStyle = `hsla(${this.hue[i]}, 80%, 60%, 0.2)`;
-            // Drawing tiny rectangles or dots to build the fractal "density"
-            ctx.fillRect(screenX, screenY, 1.5, 1.5);
+            ctx.fillRect(this.x[i], this.y[i], 1.2, 1.2);
         }
-        ctx.globalCompositeOperation = 'source-over';
     }
-
+    
     clear() { this.init(); }
 }
