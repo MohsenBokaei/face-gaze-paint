@@ -22,7 +22,6 @@ async function init() {
         calibrateBtn: document.getElementById("calibrate-button"),
         fullscreenBtn: document.getElementById("fullscreen-button"),
         clearBtn: document.getElementById("clear-paint-button"),
-        // Make this optional so it doesn't crash if the HTML is gone
         blendShapesList: document.getElementById("video-blend-shapes") 
     };
 
@@ -36,10 +35,27 @@ async function init() {
         await vision.initialize();
         document.getElementById("demos").classList.remove("invisible");
         
+        // --- Event Bindings ---
         elements.webcamBtn.onclick = togglewebcam;
         elements.calibrateBtn.onclick = startCalibration;
         elements.clearBtn.onclick = () => { painter.clear(); ui.clearPaintCanvas(); };
         elements.fullscreenBtn.onclick = () => ui.toggleFullscreen(elements.paintCanvas);
+
+        // --- Touch & Mouse Painting Logic ---
+        const handlePointer = (e) => {
+            if (e.type.startsWith('touch')) e.preventDefault();
+            const rect = elements.paintCanvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            painter.add(clientX - rect.left, clientY - rect.top);
+        };
+
+        elements.paintCanvas.onmousedown = () => { isTouchPainting = true; };
+        window.onmouseup = () => { isTouchPainting = false; };
+        elements.paintCanvas.onmousemove = (e) => { if (isTouchPainting) handlePointer(e); };
+        elements.paintCanvas.addEventListener('touchstart', (e) => { isTouchPainting = true; handlePointer(e); }, {passive: false});
+        elements.paintCanvas.addEventListener('touchend', () => { isTouchPainting = false; });
+        elements.paintCanvas.addEventListener('touchmove', (e) => { if (isTouchPainting) handlePointer(e); }, {passive: false});
 
         window.onresize = () => ui.resizeAll();
         
@@ -72,23 +88,18 @@ function appLoop() {
             }
         } else {
             const point = gaze.getGazePoint(results);
-            
-            // --- UI UPDATES ---
             ui.renderGazeIndicator(point.x, point.y);
             
-            // Draw the Mesh (This was likely missing or frozen)
             if (results?.faceLandmarks) {
                 ui.drawFaceLandmarks(results.faceLandmarks[0]);
             }
 
-            // Gaze Painting logic
             if (isPaintingEnabled && !isTouchPainting) {
                 const rect = elements.paintCanvas.getBoundingClientRect();
                 painter.add(point.x * rect.width, point.y * rect.height);
             }
         }
 
-        // Keep physics and paint rendering running
         painter.update();
         const rect = elements.paintCanvas.getBoundingClientRect();
         painter.draw(ui.paintCtx, rect.width, rect.height);
@@ -103,23 +114,24 @@ async function togglewebcam() {
         elements.webcamBtn.innerText = "ENABLE WEBCAM";
     } else {
         try {
+            // 1. Wait for the webcam to initialize
             await vision.startWebcam(elements.video);
             
-            // Explicitly set the video to play
+            // 2. Force the video to play
             elements.video.play();
             
-            elements.video.onloadedmetadata = () => {
-                console.log("Webcam Metadata Loaded");
-                // Small timeout to allow the browser to calculate the CSS box
-                setTimeout(() => {
-                    ui.resizeAll();
-                    isPaintingEnabled = true;
-                    elements.webcamBtn.innerText = "DISABLE WEBCAM";
-                }, 500);
-            };
+            // 3. Immediately trigger resizing now that the stream is active
+            // We use a small timeout to let the browser compute the layout
+            setTimeout(() => {
+                ui.resizeAll();
+                isPaintingEnabled = true;
+                elements.webcamBtn.innerText = "DISABLE WEBCAM";
+                ui.setFeedback("");
+            }, 100);
+
         } catch (e) {
             console.error("Webcam Error:", e);
-            alert("Could not access camera. Please check permissions.");
+            alert("Could not access camera.");
         }
     }
 }
